@@ -1,6 +1,6 @@
- = Factorio Mod: Turn Spidertrons into automatic biter killing machines
+ # Factorio Mod: Turn Spidertrons into automatic biter killing machines
 
- == Introduction
+## Introduction
 
  As I find it boring to play without biters and too annoying to deal with them
  manually, I created this mod.
@@ -11,7 +11,7 @@
  damage or run low on ammo, they will automatically to the closest marker
  named *Homebase* and wait there until they have been repaired and rearmed.
 
- == Roadmap
+## Roadmap
 
 - 0.1: Killer function
 - 0.2: Optimisation
@@ -25,7 +25,7 @@
 - 0.3: Multiple killer/homebase groups
 - 0.4: Hunter function
 
-== How does the *Killer* operate?
+## How does the *Killer* operate?
 
 The *Killer* spidertron works by what is known as a
 [Finite State Machine](https://en.wikipedia.org/wiki/Finite-state_machine).
