@@ -701,12 +701,14 @@ local function trans_killer_planning( killer)
   local final = nil
   if planning_steps > 0 then
 
-    killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
-    if killer.cyclesSinceTargetCheck > 20 then
-      killer.cyclesSinceTargetCheck = 0
-      if not killer.target or not killer.target.valid then
-        killer.state = killer.fail_state
-        return
+    if killer.ok_state == kState_approach then
+      killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
+      if killer.cyclesSinceTargetCheck > 20 then
+        killer.cyclesSinceTargetCheck = 0
+        if not killer.target or not killer.target.valid then
+          killer.state = killer.fail_state
+          return
+        end
       end
     end
 
