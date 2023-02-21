@@ -79,3 +79,18 @@ tiles/seconds of progress towards the target is made.
 
 If the target is destroyed during planning, the spidertron goes back to *idle*
 state. This checked every few seconds.
+
+## Limitations and Recommended Mods
+
+Spidertrons, even those controlled by an "advanced" AI such as this mod, are not
+very smart.
+
+They like the scenic route along the edge of a lake and -- literally
+-- go the extra mile to see it. A future version might fix this.
+
+Spidertrons are also very single-minded. They approach a target with complete
+disregard for other targets. They sometimes trample through big nests and get
+badly damaged in the process.
+
+In these situations you have to help the Spidertrons. Use the *Spidertron Squae
+Control* or similar mods to redirect them.
