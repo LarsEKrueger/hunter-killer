@@ -11,10 +11,16 @@
  damage or run low on ammo, they will automatically to the closest marker
  named *Homebase* and wait there until they have been repaired and rearmed.
 
-## Roadmap
+## Roadmap / ChangeLog
 
 - 0.1: Killer function
-- 0.2: Optimisation
+- 0.1.1: Fixes
+    - [X] MIT License
+    - [X] Bug fix retreat: Don't plan
+    - [X] Bug fix: Don't delete autopilot path after attack, before retreat
+- 0.2: Explorer
+    - [ ] Ensure visibility around pollution: use idle killers
+- 0.3: Optimisation
     - [ ] Select non-polluted targets close by
     - [ ] Hierarchical planner / Generate better paths
     - [ ] Planning cache / not all spiders plan the same target
@@ -22,8 +28,8 @@
     - [ ] Fine tuning default parameters
     - [ ] Call home button
     - [ ] Deal with landfill
-- 0.3: Multiple killer/homebase groups
-- 0.4: Hunter function
+- 0.4: Multiple killer/homebase groups
+- 0.5: Hunter function
 
 ## How does the *Killer* operate?
 
