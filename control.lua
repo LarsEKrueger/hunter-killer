@@ -594,16 +594,10 @@ local function trans_killer_attack( killer)
     if killer.target.health and killer.target.health <= 0.0 then
       retreat = true
     end
-    if vehicle_wants_home(killer.vehicle) then
-      game.print('attacking vehicle ' .. killer.vehicle.unit_number .. ' wants home')
-      vehicle_go_home(killer)
-      retreat = true
-    end
   else
     retreat = true
   end
   if retreat then
-    killer.vehicle.autopilot_destination = nil
     local n = #killer.safe_path
     for i = 1, n do
       killer.vehicle.add_autopilot_destination( killer.safe_path[n+1-i])
@@ -620,13 +614,7 @@ end
 local function trans_killer_retreat( killer)
   -- cyan
   killer.vehicle.color = {0.0, 1.0, 1.0, 1.0}
-  if vehicle_wants_home(killer.vehicle) then
-    game.print('retreating vehicle ' .. killer.vehicle.unit_number .. ' wants home')
-    if not vehicle_go_home(killer) then
-      -- Idle to search for the next target
-      killer.state = kState_idle
-    end
-  elseif check_stuck_state(killer) then
+  if check_stuck_state(killer) then
     killer.vehicle.autopilot_destination = nil
     -- Idle to search for the next target
     killer.state = kState_idle
