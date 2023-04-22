@@ -602,7 +602,7 @@ local function trans_killer_attack( killer)
     killer.state = kState_retreat
   elseif not have_autopilot(killer.vehicle) then
     -- If we reached an exploration target, mark it dead to stop the other spiders from searching
-    if killer.target and killer.target.exploration then
+    if killer.target and killer.target.type == 'exploration' then
       killer.target.valid = nil
       killer.target.health = nil
     end
@@ -858,7 +858,7 @@ local function find_chunks_to_explore()
       if (uncharted > 0) and (polluted > 0) then
         local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
         -- Add a fake target and mark it as an exploration target
-        valid_targets[#valid_targets+1] = { position = map_pos, valid = true, health = 1.0, exploration = true }
+        valid_targets[#valid_targets+1] = { position = map_pos, valid = true, health = 1.0, type = 'exploration' }
       end
 
       checked = checked + 1
