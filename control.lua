@@ -146,12 +146,19 @@ local function block_target(pos)
   global.target_blockers = block_list
 end
 
--- Find targets =================================================
+-- Find targets ================================================
 
-local function scan_targets( targets)
+-- Get the list of target that are not blocked
+local function find_valid_targets()
+  local nauvis = game.surfaces['nauvis']
+  local targets = nauvis.find_entities_filtered{
+        force='enemy',
+        is_military_target=true,
+        type={'turret', 'spawner'},
+      }
   local force = game.forces['player']
   local nauvis = game.surfaces['nauvis']
-  local valid_targets = {}
+  local valid_targets = global.targets or {}
   local cache_polluted = {}
   for _,tgt in ipairs(targets) do
     if tgt and tgt.valid then
@@ -179,20 +186,7 @@ local function scan_targets( targets)
       end
     end
   end
-  return valid_targets
-end
-
--- Get the list of target that are not blocked
-local function find_valid_targets()
-  local nauvis = game.surfaces['nauvis']
-  local targets = nauvis.find_entities_filtered{
-        force='enemy',
-        is_military_target=true,
-        type={'turret', 'spawner'},
-      }
-
-  local valid_targets = scan_targets( targets)
-  return valid_targets
+  global.targets = valid_targets
 end
 
 -- Find the closest enemy target to a given position
@@ -201,14 +195,19 @@ end
 local function closest_target(pos)
   local tgt_dist = nil
   local target = nil
-  for _,tgt in ipairs(global.targets) do
+  local iTarget = nil
+  for iTgt,tgt in ipairs(global.targets) do
     if tgt.valid then
       local d = dist_between_pos( tgt.position, pos)
       if (not tgt_dist) or (d < tgt_dist) and (not is_target_blocked(tgt.position)) then
         tgt_dist = d
         target = tgt
+        iTarget = iTgt
       end
     end
+  end
+  if iTarget then
+    table.remove( global.targets, iTarget)
   end
   return target
 end
@@ -523,27 +522,23 @@ end
 
 -- State transition checker for killer spidertrons in idle state
 local function trans_killer_idle( killer, valid_targets)
-  if global.idle_vehicles_processed < 3 then
-    -- White
-    killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
+  -- White
+  killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
 
+  if global.idle_vehicles_processed < 1 then
     local approach = true
     if vehicle_wants_home(killer.vehicle) then
-      game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants home')
+      game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
       if vehicle_go_home(killer) then
         approach = false
       end
     end
 
     if approach and global.targets then
-      killer.cycles_since_new_targets = 1 + (killer.cycles_since_new_targets or 0)
-      if killer.cycles_since_new_targets > 100 then
-        killer.cycles_since_new_targets = 0
-        local tgt = closest_target( killer.vehicle.position)
-        if tgt then
-          if plan_path( killer, tgt.position, kState_approach, kState_idle, { target = tgt }) then
-            global.idle_vehicles_processed = global.idle_vehicles_processed + 1
-          end
+      local tgt = closest_target( killer.vehicle.position)
+      global.idle_vehicles_processed = global.idle_vehicles_processed + 1
+      if tgt then
+        if plan_path( killer, tgt.position, kState_approach, kState_idle, { target = tgt }) then
         end
       end
     end
@@ -565,11 +560,11 @@ local function trans_killer_approach( killer)
       idle = true
     end
   end
-  if check_stuck_state(killer) and not have_autopilot(killer.vehicle) then
+  if not have_autopilot(killer.vehicle) then
     idle=true
   end
   if vehicle_wants_home(killer.vehicle) then
-    game.print('approaching vehicle ' .. killer.vehicle.unit_number .. ' wants home')
+    game.print('approaching vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
     vehicle_go_home(killer)
     attack = false
     idle = false
@@ -578,9 +573,11 @@ local function trans_killer_approach( killer)
   if attack then
     killer.safe_path = killer.vehicle.autopilot_destinations
     killer.state = kState_attack
+    killer.taptap_ctr = nil
   elseif idle then
     killer.vehicle.autopilot_destination = nil
     killer.state = kState_idle
+    killer.taptap_ctr = nil
   end
 end
 
@@ -603,8 +600,13 @@ local function trans_killer_attack( killer)
       killer.vehicle.add_autopilot_destination( killer.safe_path[n+1-i])
     end
     killer.state = kState_retreat
-  end
-  if check_stuck_state(killer) and not have_autopilot(killer.vehicle) then
+  elseif not have_autopilot(killer.vehicle) then
+    -- If we reached an exploration target, mark it dead to stop the other spiders from searching
+    if killer.target and killer.target.exploration then
+      killer.target.valid = nil
+      killer.target.health = nil
+    end
+    killer.taptap_ctr = nil
     killer.vehicle.autopilot_destination = nil
     killer.state = kState_idle
   end
@@ -818,6 +820,54 @@ local state_dispatch = {
  [kState_walking] = trans_killer_walking
 }
 
+-- A chunk to explore has at least one polluted and one unexplored chunk in a 5x5 neighbourhood
+local function find_chunks_to_explore()
+  local force = game.forces['player']
+  local nauvis = game.surfaces['nauvis']
+  if not global.chunk_iterator and (not global.targets or (#global.targets == 0)) then
+    global.chunk_iterator = nauvis.get_chunks()
+  end
+
+  if global.chunk_iterator then
+    game.print( 'find_chunks_to_explore: do chunks')
+    local chunks_to_check = 100
+    local checked = 0
+    local valid_targets = global.targets or {}
+    while (checked < chunks_to_check) do
+      local chunk = global.chunk_iterator()
+      if not chunk then
+        game.print( 'find_chunks_to_explore: done')
+        global.chunk_iterator = nil
+        break
+      end
+      local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
+
+      local uncharted = 0
+      local polluted = 0
+      for dx = -2,2 do
+        for dy = -2,2 do
+          if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
+            uncharted = uncharted + 1
+          elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
+            polluted = polluted + 1
+          end
+        end
+      end
+
+      -- Add it to the list of targets
+      if (uncharted > 0) and (polluted > 0) then
+        local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
+        -- Add a fake target and mark it as an exploration target
+        valid_targets[#valid_targets+1] = { position = map_pos, valid = true, health = 1.0, exploration = true }
+      end
+
+      checked = checked + 1
+    end
+    game.print( #valid_targets .. ' total targets')
+    global.targets = valid_targets
+  end
+end
+
 -- Part of state machine processing, to be called frequently
 local function spidertron_state_machine()
 
@@ -827,12 +877,12 @@ local function spidertron_state_machine()
   -- If there are idle vehicles and the target list is old, find a new target list
   local cycles_since_new_targets = global.cycles_since_new_targets or 0
   cycles_since_new_targets = cycles_since_new_targets + 1
-  if cycles_since_new_targets > 300 then
+  if (cycles_since_new_targets > 300) and (#global.targets == 0) then
     -- Find all idle vehicles that require the target list
     for id,killer in pairs(killers) do
       if killer.vehicle and killer.vehicle.valid then
         if killer.state == kState_idle then
-          global.targets = find_valid_targets()
+          find_valid_targets()
           global.cycles_since_new_targets = 0
           return
         end
@@ -878,6 +928,8 @@ local function spidertron_state_machine()
 
   if rescan_vehicles then
     detect_vehicles()
+  elseif global.planning_steps_done < global.planning_steps then
+    find_chunks_to_explore()
   end
 
   -- Clear the block list if this hasn't been done in a while
