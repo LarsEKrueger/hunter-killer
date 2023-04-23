@@ -148,150 +148,130 @@ end
 
 -- Find targets ================================================
 
--- Get the list of target that are not blocked
+-- Refresh the enemy list
+local function refresh_target_list()
+  local nauvis = game.surfaces['nauvis']
+  if not global.enemy_list and (not global.targets or (#global.targets == 0)) then
+    local targets = nauvis.find_entities_filtered{
+      force='enemy',
+      is_military_target=true,
+      type={'turret', 'spawner'},
+    }
+    global.enemy_list = targets
+  end
+end
+
+-- Get the list of target that are not blocked. Return true if target were checked
 local function find_valid_targets()
   local nauvis = game.surfaces['nauvis']
-  local targets = nauvis.find_entities_filtered{
-        force='enemy',
-        is_military_target=true,
-        type={'turret', 'spawner'},
-      }
-  local force = game.forces['player']
-  local nauvis = game.surfaces['nauvis']
+  local found = false
   local valid_targets = global.targets or {}
-  local cache_polluted = {}
-  for _,tgt in ipairs(targets) do
-    if tgt and tgt.valid then
-      if not is_target_blocked(tgt.position) then
-        local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
-        local tgt_chunk_code = math.floor(tgt_chunk_pos.x) .. ':' .. math.floor(tgt_chunk_pos.y)
-        local is_polluted = false
-        if cache_polluted[tgt_chunk_code] then
-          is_polluted = true
-        else
+  if global.enemy_list then
+    local enemies_to_check = 100
+    local checked = 0
+
+    local force = game.forces['player']
+    while (checked < enemies_to_check) and (#global.enemy_list > 0) do
+      local idx = #global.enemy_list
+      local tgt = global.enemy_list[idx]
+      table.remove(global.enemy_list,idx)
+      found = true
+      if tgt.valid then
+        if not is_target_blocked(tgt.position) then
+          local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
+          local is_polluted = false
           for dx = -2,2 do
+            if is_polluted then
+              break
+            end
             for dy = -2,2 do
               if force.is_chunk_charted('nauvis', {tgt_chunk_pos.x+dx,tgt_chunk_pos.y+dy}) and
                 (nauvis.get_pollution({tgt.position.x+32.0*dx,tgt.position.y+32.0*dy}) > 0.0) then
                 is_polluted = true
-                cache_polluted[tgt_chunk_code] = true
                 break
               end
             end
           end
-        end
-        if is_polluted then
-          valid_targets[#valid_targets+1] = tgt
+          if is_polluted then
+            valid_targets[#valid_targets+1] = tgt
+          end
         end
       end
+      checked = checked + 1
+    end
+    if #global.enemy_list == 0 then
+      global.enemy_list = nil
+    end
+  end
+  global.targets = valid_targets
+  return found
+end
+
+-- Return map_pos if chunk is interesting for exploration, nil otherwise
+local function interesting_for_exploration( chunk)
+  local force = game.forces['player']
+  local nauvis = game.surfaces['nauvis']
+  local uncharted = 0
+  local polluted = 0
+  if chunk then
+    local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
+    if not is_target_blocked(map_pos) then
+      for dx = -2,2 do
+        for dy = -2,2 do
+          if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
+            uncharted = uncharted + 1
+          elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
+            polluted = polluted + 1
+          end
+        end
+      end
+    end
+  end
+  if (uncharted > 0) and (polluted > 0) then
+    return map_pos
+  end
+  return nil
+end
+
+-- A chunk to explore has at least one polluted and one unexplored chunk in a 5x5 neighbourhood
+local function find_chunks_to_explore()
+  local force = game.forces['player']
+  local nauvis = game.surfaces['nauvis']
+  if not global.chunk_iterator and (not global.targets or (#global.targets == 0)) then
+    global.chunk_iterator = nauvis.get_chunks()
+  end
+
+  local valid_targets = global.targets or {}
+  local found = false
+  if global.chunk_iterator then
+    local chunks_to_check = 100
+    local checked = 0
+    while (checked < chunks_to_check) do
+      local chunk = global.chunk_iterator()
+      if not chunk then
+        global.chunk_iterator = nil
+        break
+      end
+      found = true
+      local map_pos = interesting_for_exploration(chunk)
+      if map_pos then
+        -- Add a fake target and mark it as an exploration target
+        valid_targets[#valid_targets+1] = {
+          position = map_pos,
+          valid = true,
+          health = 1.0,
+          type = 'exploration',
+          chunk = chunk,
+        }
+      end
+
+      checked = checked + 1
     end
   end
   global.targets = valid_targets
 end
 
--- Find the closest enemy target to a given position
---
--- Check if there is pollution at the position
-local function closest_target(pos)
-  local tgt_dist = nil
-  local target = nil
-  local iTarget = nil
-  for iTgt,tgt in ipairs(global.targets) do
-    if tgt.valid then
-      local d = dist_between_pos( tgt.position, pos)
-      if (not tgt_dist) or (d < tgt_dist) and (not is_target_blocked(tgt.position)) then
-        tgt_dist = d
-        target = tgt
-        iTarget = iTgt
-      end
-    end
-  end
-  if iTarget then
-    table.remove( global.targets, iTarget)
-  end
-  return target
-end
-
--- Grid coordinates ==================================
-local kGrid_stepSize   = 10.0
-local kGrid_diagStepSize = math.sqrt(2.0) * kGrid_stepSize
-
-local function grid_pos_to_map( grid_pos)
-  return {x=grid_pos.x * kGrid_stepSize,y=grid_pos.y * kGrid_stepSize}
-end
-
-local function compute_grid_pos(pos)
-  -- Round position to nearest grid position. This should still fall onto a
-  -- land tile, even on small islands.
-  local x = math.floor(pos.x / kGrid_stepSize + 0.5)
-  local y = math.floor(pos.y / kGrid_stepSize + 0.5)
-
-  return {x=x,y=y}
-end
-
-local function compute_grid_code( grid_pos)
-  return grid_pos.x .. ':' .. grid_pos.y
-end
-
--- Path finding ===========================================
-
-local function get_grid_node( grid_pos, code)
-  local grid_node = global.grid[code]
-  if not grid_node then
-    -- Create grid node. For each direction, remember if the direction is
-    -- walkable Also remember if we already tried to connect in that direction.
-    local map_pos = grid_pos_to_map( grid_pos)
-
-    local walkable = false
-    local nauvis = game.surfaces['nauvis']
-    local force = game.forces['player']
-    -- local color = { 1.0, 1.0, 1.0, 1.0 }  -- Not charted = white
-    if force.is_chunk_charted( nauvis, { math.floor(map_pos.x/32.0), math.floor(map_pos.y/32.0)}) then
-      local tile = nauvis.get_tile(map_pos.x,map_pos.y)
-      -- if not tile then
-      --   color = { 1.0, 0.0, 1.0, 1.0} -- nil = magenta
-      -- elseif not tile.valid then
-      --   color = { 1.0, 0.0, 0.0, 1.0} -- invalid = red
-      -- elseif tile.name == 'water' then
-      --   color = { 0.3, 0.3, 1.0, 1.0} -- water = lightblue
-      -- elseif tile.name == 'deepwater' then
-      --   color = { 0.0, 0.0, 1.0, 1.0} -- deepwater = darkblue
-      -- else
-      --   color = { 0.0, 1.0, 0.0, 1.0} -- ok = green
-      -- end
-      walkable = tile and tile.valid and (tile.name ~= 'water') and (tile.name ~= 'deepwater')
-    end
-    grid_node = {
-        grid_pos = grid_pos,
-        walkable = walkable,
-    }
-    -- rendering.draw_circle{ color = color, radius = 0.5, filled = true, target = map_pos, surface='nauvis', time_to_live = 1000}
-    global.grid[code] = grid_node
-  end
-  return grid_node
-end
-
-local function grid_is_walkable( grid_pos, grid_code)
-  local grid_node = get_grid_node( grid_pos, grid_code)
-  return grid_node.walkable
-end
-
-local function clear_chunk_from_cache(event)
-  if event.force == 'player' then
-     local chunk_pos = event.position
-     local map_pos = {x=chunk_pos.x * 32.0, y=chunk_pos.y * 32.0}
-     for dx = -2,2 do
-       for dy = -2,2 do
-         local grid_pos = compute_grid_pos( {x=map_pos.x + dx * kGrid_stepSize, y=map_pos.y + dy * kGrid_stepSize})
-         local grid_code = compute_grid_code( grid_pos)
-         global.grid[grid_code] = nil
-       end
-     end
-  end
-end
-
-
--- A* planner ==================================================
+-- planner ==================================================
 
 local kState_idle       = 0
 local kState_planning   = 1
@@ -302,174 +282,67 @@ local kState_retreat    = 5
 local kState_goHome     = 6
 local kState_reArm      = 7
 
--- Update neighbour
-local function plan_add_neighbour( killer, grid_pos, grid_code, parent_gc, parent_mn, add_distance, near_water)
-  if grid_is_walkable( grid_pos, grid_code) then
-    local tentative_gScore = parent_mn.gScore + add_distance
-    local map_pos = grid_pos_to_map( grid_pos)
-    local goal_dist = dist_between_pos( killer.goal, map_pos)
-    local weight = 3.0
-    local prio = (weight * goal_dist + tentative_gScore)
-    if near_water then
-      prio = 0.0
-    end
-    if not killer.map[grid_code] then
-      killer.map[grid_code] = {
-        grid_pos = grid_pos,
-        gScore = tentative_gScore,
-        hScore = goal_dist,
-        parent = parent_gc,
-      }
-      if not killer.openSet:contains( grid_code) then
-        killer.openSet:enqueue( grid_code, prio)
-      end
-    elseif tentative_gScore < killer.map[grid_code].gScore then
-      local neighbour = killer.map[grid_code]
-      neighbour.gScore = tentative_gScore
-      neighbour.hScore = goal_dist
-      neighbour.parent = parent_gc
-      if not killer.openSet:contains( grid_code) then
-        killer.openSet:enqueue( grid_code, prio)
-      end
-    end
-  end
-end
-
-local kFound_noPath   = 0
-local kFound_found    = 1
-local kFound_stopped  = 2
-local kFound_planning = 3
-
--- One step of the A*
-local function path_search( killer)
-
-  killer.plan_calls = killer.plan_calls + 1
-
-  if killer.openSet:empty() then
-    block_target(killer.target_pos)
-    return {found = kFound_noPath}
-  end
-  local current_gc, _ = killer.openSet:dequeue()
-  -- The grid entry must exist
-  local current_mn = killer.map[current_gc]
-  local current_gp = current_mn.grid_pos
-
-  -- If close to goal, stop searching
-  if (current_mn.hScore < kGrid_stepSize) then
-    return {grid_code=current_gc, found = kFound_found}
-  end
-  -- if (killer.plan_calls > 1000) then
-  --   return {grid_code=current_gc, found = kFound_stopped}
-  -- end
-
-  -- The current position is walkable. Check the 8 neighbours and insert those that are walkable too.
-  local n_gp = { x=current_gp.x, y=current_gp.y - 1.0 }
-  local s_gp = { x=current_gp.x, y=current_gp.y + 1.0 }
-  local e_gp = { x=current_gp.x + 1.0, y=current_gp.y }
-  local w_gp = { x=current_gp.x - 1.0, y=current_gp.y }
-
-  local n_gc = compute_grid_code( n_gp)
-  local s_gc = compute_grid_code( s_gp)
-  local e_gc = compute_grid_code( e_gp)
-  local w_gc = compute_grid_code( w_gp)
-
-  local ne_gp = { x=current_gp.x + 1.0, y=current_gp.y - 1.0 }
-  local nw_gp = { x=current_gp.x - 1.0, y=current_gp.y - 1.0 }
-  local se_gp = { x=current_gp.x + 1.0, y=current_gp.y + 1.0 }
-  local sw_gp = { x=current_gp.x - 1.0, y=current_gp.y + 1.0 }
-
-  local ne_gc = compute_grid_code( ne_gp)
-  local nw_gc = compute_grid_code( nw_gp)
-  local se_gc = compute_grid_code( se_gp)
-  local sw_gc = compute_grid_code( sw_gp)
-
-  local near_water =
-  (not grid_is_walkable( n_gp, n_gc)) or
-  (not grid_is_walkable( e_gp, e_gc)) or
-  (not grid_is_walkable( s_gp, s_gc)) or
-  (not grid_is_walkable( w_gp, w_gc)) or
-  (not grid_is_walkable( ne_gp, ne_gc)) or
-  (not grid_is_walkable( nw_gp, nw_gc)) or
-  (not grid_is_walkable( se_gp, se_gc)) or
-  (not grid_is_walkable( sw_gp, sw_gc))
-
-  plan_add_neighbour( killer, n_gp, n_gc, current_gc, current_mn, kGrid_stepSize, near_water)
-  plan_add_neighbour( killer, e_gp, e_gc, current_gc, current_mn, kGrid_stepSize, near_water)
-  plan_add_neighbour( killer, s_gp, s_gc, current_gc, current_mn, kGrid_stepSize, near_water)
-  plan_add_neighbour( killer, w_gp, w_gc, current_gc, current_mn, kGrid_stepSize, near_water)
-
-  plan_add_neighbour( killer, ne_gp, ne_gc, current_gc, current_mn, kGrid_diagStepSize, near_water)
-  plan_add_neighbour( killer, nw_gp, nw_gc, current_gc, current_mn, kGrid_diagStepSize, near_water)
-  plan_add_neighbour( killer, se_gp, se_gc, current_gc, current_mn, kGrid_diagStepSize, near_water)
-  plan_add_neighbour( killer, sw_gp, sw_gc, current_gc, current_mn, kGrid_diagStepSize, near_water)
-
-  return {found = kFound_planning}
-end
-
 -- Plan a path from target to current position.
 local function plan_path( killer, target, ok_state, fail_state, info)
   -- Center of the circle we're walking while waiting for the planner to finish
   if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 32.0 then
     killer.taptap_ctr = killer.vehicle.position
   end
-  killer.openSet = PriorityQueue.new('min')
-  -- Info about the map points that have been visited or need to be visited
-  killer.map = {}
-  killer.plan_calls = 0
-  -- Goal of the path search, i.e. starting position of future path
-  killer.goal = killer.vehicle.position
-  -- Target to reach, i.e. end position of future path.
-  killer.target_pos = target
 
-  -- Create the grid if it doesn't exits
-  if not global.grid then
-    global.grid = {}
-  end
-
-  -- Insert the starting node into the grid
-  local tgt_gp = compute_grid_pos(target)
-  local tgt_gc = compute_grid_code( tgt_gp)
-  local goal_dist = dist_between_pos( killer.goal, killer.target_pos)
-  killer.initial_goal_dist = goal_dist
-  killer.openSet:enqueue( tgt_gc, goal_dist)
-  killer.map[tgt_gc] = {
-    grid_pos = tgt_gp,
-    gScore = 0.0,
-    hScore = goal_dist,
-    -- No parent
+  local pathing_collision_mask = {"water-tile", "consider-tile-transitions", "colliding-with-tiles-only", "not-colliding-with-itself"}
+  local request = {
+    bounding_box =  {{-5, -5}, {5, 5}},
+    collision_mask = pathing_collision_mask,
+    start = killer.vehicle.position,
+    goal = target,
+    force = killer.vehicle.force,
+    radius = 8,
+    pathfinding_flags = {
+      cache = false,
+      low_priority = false
+    },
+    path_resolution_modifier = -3,
+    killer = killer,
   }
 
-  -- Create entry in global grid. If the target is on water, stop planning.
-  local walkable = grid_is_walkable(tgt_gp,tgt_gc)
-  if walkable then
-    killer.state = kState_planning
-    killer.ok_state = ok_state
-    killer.fail_state = fail_state
+  local nauvis = game.surfaces['nauvis']
+  local request_id = nauvis.request_path(request)
+  global.pathfinder_requests = global.pathfinder_requests or {}
+  global.pathfinder_requests[request_id] = request
+  killer.request_id = request_id
+  killer.pathfinder_request = request
+  killer.target_pos = target
 
-    for k,v in pairs(info) do
-      killer[k] = v
-    end
-  else
-    block_target(killer.target_pos)
-    killer.state = fail_state
+  for k,v in pairs(info) do
+    killer[k] = v
   end
-  return walkable
+  killer.ok_state=ok_state
+  killer.fail_state = fail_state
+  killer.state = kState_planning
+end
+
+-- Event callback if the planner is done
+local function path_planner_finished(event)
+  local request = global.pathfinder_requests[event.id]
+  if request then
+    if event.path then
+      request.killer.vehicle.autopilot_destination = nil
+      for _,p in ipairs(event.path) do
+        request.killer.vehicle.add_autopilot_destination( p.position)
+      end
+      request.killer.state = request.killer.ok_state
+      request.killer.request_id = nil
+    else
+      if not event.try_again_later then
+        block_target(request.goal)
+        request.killer.state = request.killer.fail_state
+      end
+    end
+    global.pathfinder_requests[event.id] = nil
+  end
 end
 
 -- State machine ===============================================
-
-local function check_stuck_state(killer)
-  local stuck = false
-  if killer.last_state ~= killer.state then
-    killer.stuck_count = 0
-  else
-    killer.stuck_count = killer.stuck_count + 1
-    if killer.stuck_count > 100 then
-      stuck = true
-    end
-  end
-  return stuck
-end
 
 local function have_autopilot(vehicle)
   return vehicle.autopilot_destination or (table_size(vehicle.autopilot_destinations) ~= 0);
@@ -524,24 +397,9 @@ end
 local function trans_killer_idle( killer, valid_targets)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
-
-  local approach = true
   if vehicle_wants_home(killer.vehicle) then
     game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
-    if vehicle_go_home(killer) then
-      approach = false
-    end
-  end
-
-  if global.idle_vehicles_processed < 1 then
-    if approach and global.targets then
-      local tgt = closest_target( killer.vehicle.position)
-      global.idle_vehicles_processed = global.idle_vehicles_processed + 1
-      if tgt then
-        if plan_path( killer, tgt.position, kState_approach, kState_idle, { target = tgt }) then
-        end
-      end
-    end
+    vehicle_go_home(killer)
   end
 end
 
@@ -551,14 +409,20 @@ local function trans_killer_approach( killer)
   killer.vehicle.color = {1.0, 0.5, 0.0, 1.0}
   local attack = false
   local idle = false
-  if killer.target then
-    if killer.target.valid and killer.target.health and killer.target.health > 0.0 then
-      if dist_between_pos(killer.target_pos, killer.vehicle.position) < 100.0 then
-        attack = true
+  if killer.target and killer.target.valid then
+    if killer.target.type == 'exploration' then
+      if not interesting_for_exploration(killer.target.chunk) then
+        idle = true
       end
     else
-      idle = true
+      if killer.target.health and killer.target.health > 0.0 then
+        if dist_between_pos(killer.target_pos, killer.vehicle.position) < 100.0 then
+          attack = true
+        end
+      end
     end
+  else
+    idle = true
   end
   if not have_autopilot(killer.vehicle) then
     idle=true
@@ -616,11 +480,7 @@ end
 local function trans_killer_retreat( killer)
   -- cyan
   killer.vehicle.color = {0.0, 1.0, 1.0, 1.0}
-  if check_stuck_state(killer) then
-    killer.vehicle.autopilot_destination = nil
-    -- Idle to search for the next target
-    killer.state = kState_idle
-  elseif not killer.vehicle.autopilot_destination then
+  if not have_autopilot(killer.vehicle) then
     killer.state = kState_idle
   end
 end
@@ -656,18 +516,13 @@ end
 
 -- State transition checker for killer spidertrons in planning state
 local function trans_killer_planning( killer)
-  global.planning_steps_sum = global.planning_steps_sum + global.planning_steps
-  local planning_steps = math.floor( global.planning_steps_sum) - global.planning_steps_done
-  global.planning_steps_done = global.planning_steps_done + planning_steps
-
   -- Yellow
   killer.vehicle.color = {1.0, 1.0, 0.0, 1.0}
-
-  global.new_planning_vehicles = global.new_planning_vehicles + 1
 
   -- Walk around in circles
   local taptap_radius = 15.0
   local taptap_steps = 16
+  local nauvis = game.surfaces['nauvis']
   if killer.taptap_ctr and (#killer.vehicle.autopilot_destinations < taptap_steps) then
     if #killer.vehicle.autopilot_destinations == 1 then
       killer.state = kState_walking
@@ -675,7 +530,6 @@ local function trans_killer_planning( killer)
       return
     end
     -- Add another revolution
-    local nauvis = game.surfaces['nauvis']
     for i = 0, (taptap_steps-1) do
       local angle = 2.0*math.pi*i/taptap_steps
       local x=killer.taptap_ctr.x + math.sin(angle)*taptap_radius
@@ -688,112 +542,26 @@ local function trans_killer_planning( killer)
     end
   end
 
-  local final = nil
-  if planning_steps > 0 then
-
-    if killer.ok_state == kState_approach then
-      killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
-      if killer.cyclesSinceTargetCheck > 20 then
-        killer.cyclesSinceTargetCheck = 0
-        if not killer.target or not killer.target.valid then
-          killer.state = killer.fail_state
-          return
-        end
-      end
+  -- Check the request needs to be tried again
+  if killer.request_id and global.pathfinder_requests and not global.pathfinder_requests[killer.request_id] then
+    local request = killer.pathfinder_request
+    if request then
+      local request_id = nauvis.request_path(request)
+      global.pathfinder_requests[request_id] = request
+      killer.request_id = request_id
+    else
+      killer.state = kState_idle
     end
+  end
 
-    if killer.openSet and not killer.openSet._higherpriority then
-      killer.openSet._higherpriority = function (a,b)
-        return a < b
-      end
-    end
-    for i = 1, planning_steps do
-      local res = path_search( killer)
-      if res.found ~= kFound_planning then
-        final = res
-        break
-      end
-    end
-    if killer.decorations then
-      for _,d in ipairs(killer.decorations) do
-        rendering.destroy( d)
-      end
-    end
-
-    local ds = {}
-    if false then
-      -- Draw a line to the target position
-      local color = { 0.0, 1.0, 0.5, 1.0}
-      ds[#ds+1] = rendering.draw_line{
-        color = color,
-        from = killer.goal,
-        to = killer.target_pos,
-        width=2.0,
-        surface='nauvis',
-        time_to_live = 100}
-
-      -- Draw the front
-      local color = { 1.0, 0.5, 0.5, 1.0}
-      local n = math.min( #killer.openSet, 100)
-      for i = 1, n do
-        local grid_code = killer.openSet[i]
-        local grid_pos = killer.map[grid_code].grid_pos
-        local map_pos = grid_pos_to_map( grid_pos)
-        ds[#ds+1] = rendering.draw_circle{ color = color, radius = 0.8, target = map_pos, surface='nauvis', time_to_live = 100}
-        -- ds[#ds+1] = rendering.draw_text{ color = color, text = i .. ': ' .. killer.openSet._priorities[i], target = map_pos, surface='nauvis', time_to_live = 100}
-        local parent_gc = killer.map[grid_code].parent
-        if parent_gc then
-          local parent_gp = killer.map[parent_gc].grid_pos
-          local parent_mp = grid_pos_to_map( parent_gp)
-          ds[#ds+1] = rendering.draw_line{ color = color, from = parent_mp, to = map_pos, width=1.0, surface='nauvis', time_to_live = 100}
-        end
-      end
-
-      -- Draw the best path
-      if not killer.openSet:empty() then
-        local grid_code, _ = killer.openSet:peek()
-        local last_pos = killer.goal
-        local color = { 1.0, 0.3, 0.3, 1.0}
-        while grid_code do
-          local grid_pos = killer.map[grid_code].grid_pos
-          local map_pos = grid_pos_to_map( grid_pos)
-          ds[#ds+1] = rendering.draw_line{ color = color, from = last_pos, to = map_pos, width=3.0, surface='nauvis', time_to_live = 100}
-          last_pos = map_pos
-          grid_code = killer.map[grid_code].parent
-        end
-      end
-
-      -- local color = { 0.8, 0.3, 0.3, 1.0}
-      -- local block_list = global.target_blockers or {}
-      -- for _,ctr in pairs(block_list) do
-      --   if type(ctr) == 'table' then
-      --     ds[#ds+1] = rendering.draw_circle{ color = color, radius = 16.0, width = 10.0, target = ctr, surface='nauvis', time_to_live = 100}
-      --   end
-      -- end
-    end
-    killer.decorations = ds
-
-    if final then
-      if final.found == kFound_found then
-        -- We found a path, set the autopilot
-        killer.vehicle.autopilot_destination=nil
-        local grid_code = final.grid_code
-        while grid_code do
-          local grid_pos = killer.map[grid_code].grid_pos
-          local map_pos = grid_pos_to_map( grid_pos)
-          killer.vehicle.add_autopilot_destination( map_pos)
-          grid_code = killer.map[grid_code].parent
-        end
-        killer.state = killer.ok_state
-      elseif final.found == kFound_stopped then
-        -- Restart planning to the best guess towards the target
-        local grid_code = final.grid_code
-        local grid_pos = killer.map[grid_code].grid_pos
-        local map_pos = grid_pos_to_map( grid_pos)
-        killer.target = nil
-        plan_path( killer, map_pos, killer.ok_state, killer.fail_state, {})
-      elseif final.found == kFound_noPath then
+  if killer.ok_state == kState_approach then
+    killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
+    if killer.cyclesSinceTargetCheck > 5 then
+      killer.cyclesSinceTargetCheck = 0
+      if not killer.target or not killer.target.valid then
         killer.state = killer.fail_state
+        global.pathfinder_requests[killer.request_id] = nil
+        return
       end
     end
   end
@@ -820,93 +588,44 @@ local state_dispatch = {
  [kState_walking] = trans_killer_walking
 }
 
--- A chunk to explore has at least one polluted and one unexplored chunk in a 5x5 neighbourhood
-local function find_chunks_to_explore()
-  local force = game.forces['player']
-  local nauvis = game.surfaces['nauvis']
-  if not global.chunk_iterator and (not global.targets or (#global.targets == 0)) then
-    global.chunk_iterator = nauvis.get_chunks()
-  end
-
-  if global.chunk_iterator then
-    game.print( 'find_chunks_to_explore: do chunks')
-    local chunks_to_check = 100
-    local checked = 0
-    local valid_targets = global.targets or {}
-    while (checked < chunks_to_check) do
-      local chunk = global.chunk_iterator()
-      if not chunk then
-        game.print( 'find_chunks_to_explore: done')
-        global.chunk_iterator = nil
-        break
-      end
-      local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
-
-      local uncharted = 0
-      local polluted = 0
-      for dx = -2,2 do
-        for dy = -2,2 do
-          if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
-            uncharted = uncharted + 1
-          elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
-            polluted = polluted + 1
+-- Take the first target and find the closest idle spider
+local function send_closest_spider()
+  if global.targets then
+    if #global.targets > 0 then
+      local idx = 1
+      if global.targets[idx].valid then
+        local tgt_pos = global.targets[idx].position
+        if not is_target_blocked(tgt_pos) then
+          local killers = global.vehicles or {}
+          local closest_d = nil
+          local closest_killer = nil
+          for id,killer in pairs(killers) do
+            if killer.vehicle and killer.vehicle.valid then
+              if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
+                local d = dist_between_pos( tgt_pos, killer.vehicle.position)
+                if (not closest_d) or (d < closest_d) and (not is_target_blocked(tgt_pos)) then
+                  closest_d = d
+                  closest_killer = killer
+                end
+              end
+            end
           end
+          if not closest_killer then
+            return
+          end
+          plan_path( closest_killer, tgt_pos, kState_approach, kState_idle, { target = global.targets[idx] })
         end
       end
-
-      -- Add it to the list of targets
-      if (uncharted > 0) and (polluted > 0) then
-        local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
-        -- Add a fake target and mark it as an exploration target
-        valid_targets[#valid_targets+1] = { position = map_pos, valid = true, health = 1.0, type = 'exploration' }
-      end
-
-      checked = checked + 1
+      table.remove(global.targets,idx)
     end
-    game.print( #valid_targets .. ' total targets')
-    global.targets = valid_targets
   end
 end
 
 -- Part of state machine processing, to be called frequently
 local function spidertron_state_machine()
-
   local rescan_vehicles = false
   local killers = global.vehicles or {}
 
-  -- If there are idle vehicles and the target list is old, find a new target list
-  local cycles_since_new_targets = global.cycles_since_new_targets or 0
-  cycles_since_new_targets = cycles_since_new_targets + 1
-  if (cycles_since_new_targets > 300) and (#global.targets == 0) then
-    -- Find all idle vehicles that require the target list
-    for id,killer in pairs(killers) do
-      if killer.vehicle and killer.vehicle.valid then
-        if killer.state == kState_idle then
-          find_valid_targets()
-          global.cycles_since_new_targets = 0
-          return
-        end
-      end
-    end
-  end
-  global.cycles_since_new_targets = cycles_since_new_targets
-
-  if not global.planning_vehicles then
-    global.planning_vehicles = #killers
-  end
-
-  -- Ensure roughly the same number of planning steps per cycle.
-  local planning_steps = 50
-  if global.planning_vehicles > 0 then
-    -- Ensure at least one step per cycle
-    planning_steps = planning_steps / global.planning_vehicles
-  end
-  global.planning_steps = planning_steps
-
-  global.planning_steps_done = 0.0
-  global.planning_steps_sum = 0.0
-  global.idle_vehicles_processed = 0
-  global.new_planning_vehicles = 0
   for id,killer in pairs(killers) do
     if killer.vehicle and killer.vehicle.valid then
       local current_state = killer.state
@@ -924,24 +643,32 @@ local function spidertron_state_machine()
       rescan_vehicles = true
     end
   end
-  global.planning_vehicles = global.new_planning_vehicles
 
   if rescan_vehicles then
     detect_vehicles()
-  elseif global.planning_steps_done < global.planning_steps then
+  end
+end
+
+local function spidertron_assign_targets()
+  for _ = 1, 10 do
+    send_closest_spider()
+  end
+end
+
+local function spidertron_clear_blocklist()
+  global.target_blockers = {}
+end
+
+local function spidertron_find_targets()
+  if not find_valid_targets() then
     find_chunks_to_explore()
   end
-
-  -- Clear the block list if this hasn't been done in a while
-  local calls_since_empty_blocklist = global.calls_since_empty_blocklist or 0
-  if calls_since_empty_blocklist > 10000 then
-    global.target_blockers = {}
-    global.grid = {}
-    calls_since_empty_blocklist = 0
-  end
-  calls_since_empty_blocklist = calls_since_empty_blocklist + 1
-  global.calls_since_empty_blocklist = calls_since_empty_blocklist
 end
+
+local function spidertron_refresh_target_lists()
+  refresh_target_list()
+end
+
 
 -- Register the vehicle detector
 script.on_event(defines.events.on_entity_renamed, detect_vehicles)
@@ -954,12 +681,18 @@ script.on_event(defines.events.on_chart_tag_added, detect_homebases)
 script.on_event(defines.events.on_chart_tag_modified, detect_homebases)
 script.on_event(defines.events.on_chart_tag_removed, detect_homebases)
 
--- Register the state machine handler
-script.on_nth_tick(6, spidertron_state_machine)
+-- Register the cyclic events
+script.on_nth_tick(6, spidertron_assign_targets)
+
+script.on_nth_tick(12, spidertron_find_targets)
+script.on_nth_tick(3600, spidertron_refresh_target_lists)
+
+script.on_nth_tick(30, spidertron_state_machine)
+script.on_nth_tick(10000, spidertron_clear_blocklist)
+
+-- Register the path planner
+script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
 
 -- Register the metatables for PriorityQueue
 script.register_metatable( 'PriorityQueue', getmetatable(PriorityQueue))
 script.register_metatable( 'PriorityQueueMt', getmetatable(PriorityQueue.new()))
-
--- Register event to clear the cache if a chunk is charted
-script.on_event( defines.events.on_chunk_charted, clear_chunk_from_cache)
