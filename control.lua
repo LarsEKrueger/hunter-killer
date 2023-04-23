@@ -525,15 +525,15 @@ local function trans_killer_idle( killer, valid_targets)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
 
-  if global.idle_vehicles_processed < 1 then
-    local approach = true
-    if vehicle_wants_home(killer.vehicle) then
-      game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
-      if vehicle_go_home(killer) then
-        approach = false
-      end
+  local approach = true
+  if vehicle_wants_home(killer.vehicle) then
+    game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
+    if vehicle_go_home(killer) then
+      approach = false
     end
+  end
 
+  if global.idle_vehicles_processed < 1 then
     if approach and global.targets then
       local tgt = closest_target( killer.vehicle.position)
       global.idle_vehicles_processed = global.idle_vehicles_processed + 1
