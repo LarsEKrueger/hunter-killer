@@ -158,13 +158,16 @@ local function refresh_target_list()
       type={'turret', 'spawner'},
     }
     global.enemy_list = targets
+    if #targets > 0 then
+      game.print( #targets .. ' potential target(s)')
+    end
   end
 end
 
 -- Get the list of target that are not blocked. Return true if target were checked
 local function find_valid_targets()
   local nauvis = game.surfaces['nauvis']
-  local found = false
+  local some_checked = false
   local valid_targets = global.targets or {}
   if global.enemy_list then
     local enemies_to_check = 100
@@ -175,7 +178,7 @@ local function find_valid_targets()
       local idx = #global.enemy_list
       local tgt = global.enemy_list[idx]
       table.remove(global.enemy_list,idx)
-      found = true
+      some_checked = true
       if tgt.valid then
         if not is_target_blocked(tgt.position) then
           local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
@@ -200,11 +203,12 @@ local function find_valid_targets()
       checked = checked + 1
     end
     if #global.enemy_list == 0 then
+      game.print( #valid_targets .. ' target(s) in pollution')
       global.enemy_list = nil
     end
   end
   global.targets = valid_targets
-  return found
+  return some_checked
 end
 
 -- Return map_pos if chunk is interesting for exploration, nil otherwise
@@ -226,9 +230,9 @@ local function interesting_for_exploration( chunk)
         end
       end
     end
-  end
-  if (uncharted > 0) and (polluted > 0) then
-    return map_pos
+    if (uncharted > 0) and (polluted > 0) then
+      return map_pos
+    end
   end
   return nil
 end
@@ -242,17 +246,16 @@ local function find_chunks_to_explore()
   end
 
   local valid_targets = global.targets or {}
-  local found = false
   if global.chunk_iterator then
     local chunks_to_check = 100
     local checked = 0
     while (checked < chunks_to_check) do
       local chunk = global.chunk_iterator()
       if not chunk then
+        game.print( #valid_targets .. ' places to visit')
         global.chunk_iterator = nil
         break
       end
-      found = true
       local map_pos = interesting_for_exploration(chunk)
       if map_pos then
         -- Add a fake target and mark it as an exploration target
@@ -264,7 +267,6 @@ local function find_chunks_to_explore()
           chunk = chunk,
         }
       end
-
       checked = checked + 1
     end
   end
@@ -296,9 +298,9 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     start = killer.vehicle.position,
     goal = target,
     force = killer.vehicle.force,
-    radius = 8,
+    radius = 1,
     pathfinding_flags = {
-      cache = false,
+      cache = true,
       low_priority = false
     },
     path_resolution_modifier = -3,
@@ -323,22 +325,27 @@ end
 
 -- Event callback if the planner is done
 local function path_planner_finished(event)
-  local request = global.pathfinder_requests[event.id]
-  if request then
-    if event.path then
-      request.killer.vehicle.autopilot_destination = nil
-      for _,p in ipairs(event.path) do
-        request.killer.vehicle.add_autopilot_destination( p.position)
+  if global.pathfinder_requests then
+    local request = global.pathfinder_requests[event.id]
+    if request then
+      if event.path then
+        if request.killer.vehicle.valid then
+          request.killer.vehicle.autopilot_destination = nil
+          for _,p in ipairs(event.path) do
+            request.killer.vehicle.add_autopilot_destination( p.position)
+          end
+        end
+        request.killer.state = request.killer.ok_state
+        request.killer.request_id = nil
+        request.killer.pathfinder_request = nil
+      else
+        if not event.try_again_later then
+          block_target(request.goal)
+          request.killer.state = request.killer.fail_state
+        end
       end
-      request.killer.state = request.killer.ok_state
-      request.killer.request_id = nil
-    else
-      if not event.try_again_later then
-        block_target(request.goal)
-        request.killer.state = request.killer.fail_state
-      end
+      global.pathfinder_requests[event.id] = nil
     end
-    global.pathfinder_requests[event.id] = nil
   end
 end
 
@@ -391,7 +398,6 @@ local function vehicle_wants_home(vehicle)
   end
   return retreat
 end
-
 
 -- State transition checker for killer spidertrons in idle state
 local function trans_killer_idle( killer, valid_targets)
@@ -603,7 +609,7 @@ local function send_closest_spider()
             if killer.vehicle and killer.vehicle.valid then
               if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
                 local d = dist_between_pos( tgt_pos, killer.vehicle.position)
-                if (not closest_d) or (d < closest_d) and (not is_target_blocked(tgt_pos)) then
+                if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt_pos)) then
                   closest_d = d
                   closest_killer = killer
                 end
@@ -617,6 +623,67 @@ local function send_closest_spider()
         end
       end
       table.remove(global.targets,idx)
+    end
+  end
+end
+
+-- Check each idle spider if it can take the target of an approaching spider
+local function steal_target()
+  local killers = global.vehicles or {}
+  local stole = false
+  for id_i,killer_i in pairs(killers) do
+    if killer_i.vehicle and killer_i.vehicle.valid and (killer_i.state == kState_idle) and not vehicle_wants_home(killer_i.vehicle) then
+      local closest_d = nil
+      local closest_killer = nil
+      for id_j,killer_j in pairs(killers) do
+        if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and (killer_j.state == kState_approach) and not vehicle_wants_home(killer_j.vehicle) then
+          local d_i = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
+          local d_j = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
+          if (d_i < d_j) and ((not closest_d) or (d_i < closest_d)) then
+            closest_d = d_i
+            closest_killer = killer_j
+          end
+        end
+      end
+      if closest_killer then
+        closest_killer.state = kState_idle
+        closest_killer.vehicle.autopilot_destination = nil
+        plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
+        stole = true
+      end
+    end
+  end
+  return stole
+end
+
+-- Find the first idle killer and send it to the closest target
+local function send_killer_to_target()
+  global.targets = global.targets or {}
+  local killers = global.vehicles or {}
+  for id,killer in pairs(killers) do
+    if killer.vehicle and killer.vehicle.valid then
+      if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
+        local closest_d = nil
+        local closest_tgt = nil
+        local closest_i = nil
+        for i,tgt in ipairs(global.targets) do
+          if not tgt.valid then
+            table.remove(global.targets,i)
+          else
+            local d = dist_between_pos( tgt.position, killer.vehicle.position)
+            if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt.position)) then
+              closest_d = d
+              closest_tgt = tgt
+              closest_i = i
+            end
+          end
+        end
+        if closest_i then
+          plan_path( killer, closest_tgt.position, kState_approach, kState_idle, { target = closest_tgt })
+          table.remove(global.targets,closest_i)
+          return
+        end
+      end
     end
   end
 end
@@ -649,10 +716,13 @@ local function spidertron_state_machine()
   end
 end
 
+local function spidertron_reassign_targets()
+  steal_target()
+end
+
 local function spidertron_assign_targets()
-  for _ = 1, 10 do
-    send_closest_spider()
-  end
+  send_closest_spider()
+  -- send_killer_to_target()
 end
 
 local function spidertron_clear_blocklist()
@@ -683,7 +753,7 @@ script.on_event(defines.events.on_chart_tag_removed, detect_homebases)
 
 -- Register the cyclic events
 script.on_nth_tick(6, spidertron_assign_targets)
-
+script.on_nth_tick(300, spidertron_reassign_targets)
 script.on_nth_tick(12, spidertron_find_targets)
 script.on_nth_tick(3600, spidertron_refresh_target_lists)
 
