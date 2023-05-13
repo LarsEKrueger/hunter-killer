@@ -148,10 +148,10 @@ end
 
 -- Find targets ================================================
 
--- Refresh the enemy list
-local function refresh_target_list()
+-- Get the list of target that are not blocked. Return true if target were checked
+local function find_valid_targets()
   local nauvis = game.surfaces['nauvis']
-  if not global.enemy_list and (not global.targets or (#global.targets == 0)) then
+  if (not global.enemy_list) and (not global.targets or (#global.targets == 0)) then
     local targets = nauvis.find_entities_filtered{
       force='enemy',
       is_military_target=true,
@@ -159,14 +159,10 @@ local function refresh_target_list()
     }
     global.enemy_list = targets
     if #targets > 0 then
-      game.print( #targets .. ' potential target(s)')
+      game.print( #targets .. ' enemies of the realm found')
+      global.target_blockers = {}
     end
   end
-end
-
--- Get the list of target that are not blocked. Return true if target were checked
-local function find_valid_targets()
-  local nauvis = game.surfaces['nauvis']
   local some_checked = false
   local valid_targets = global.targets or {}
   if global.enemy_list then
@@ -203,7 +199,7 @@ local function find_valid_targets()
       checked = checked + 1
     end
     if #global.enemy_list == 0 then
-      game.print( #valid_targets .. ' target(s) in pollution')
+      game.print( #valid_targets .. ' enemies in pollution')
       global.enemy_list = nil
     end
   end
@@ -293,7 +289,7 @@ local function plan_path( killer, target, ok_state, fail_state, info)
 
   local pathing_collision_mask = {"water-tile", "consider-tile-transitions", "colliding-with-tiles-only", "not-colliding-with-itself"}
   local request = {
-    bounding_box =  {{-5, -5}, {5, 5}},
+    bounding_box =  {{-1, -1}, {1, 1}},
     collision_mask = pathing_collision_mask,
     start = killer.vehicle.position,
     goal = target,
@@ -301,15 +297,19 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     radius = 1,
     pathfinding_flags = {
       cache = true,
-      low_priority = false
+      low_priority = false,
     },
-    path_resolution_modifier = -3,
+    path_resolution_modifier = -4,
     killer = killer,
   }
 
   local nauvis = game.surfaces['nauvis']
-  local request_id = nauvis.request_path(request)
+
   global.pathfinder_requests = global.pathfinder_requests or {}
+  if killer.request_id then
+    global.pathfinder_requests[killer.request_id] = nil
+  end
+  local request_id = nauvis.request_path(request)
   global.pathfinder_requests[request_id] = request
   killer.request_id = request_id
   killer.pathfinder_request = request
@@ -336,14 +336,17 @@ local function path_planner_finished(event)
           end
         end
         request.killer.state = request.killer.ok_state
-        request.killer.request_id = nil
-        request.killer.pathfinder_request = nil
       else
         if not event.try_again_later then
           block_target(request.goal)
           request.killer.state = request.killer.fail_state
         end
       end
+      if request.killer.request_id then
+        global.pathfinder_requests[request.killer.request_id] = nil
+      end
+      request.killer.request_id = nil
+      request.killer.pathfinder_request = nil
       global.pathfinder_requests[event.id] = nil
     end
   end
@@ -417,7 +420,11 @@ local function trans_killer_approach( killer)
   local idle = false
   if killer.target and killer.target.valid then
     if killer.target.type == 'exploration' then
-      if not interesting_for_exploration(killer.target.chunk) then
+      if interesting_for_exploration(killer.target.chunk) then
+        if dist_between_pos(killer.target_pos, killer.vehicle.position) < 100.0 then
+          attack = true
+        end
+      else
         idle = true
       end
     else
@@ -529,9 +536,16 @@ local function trans_killer_planning( killer)
   local taptap_radius = 15.0
   local taptap_steps = 16
   local nauvis = game.surfaces['nauvis']
-  if killer.taptap_ctr and (#killer.vehicle.autopilot_destinations < taptap_steps) then
+  local another_round = false
+  if killer.taptap_ctr and (#killer.vehicle.autopilot_destinations < taptap_steps/2) then
     if #killer.vehicle.autopilot_destinations == 1 then
       killer.state = kState_walking
+      if killer.request_id then
+        global.pathfinder_requests = global.pathfinder_requests or {}
+        global.pathfinder_requests[killer.request_id] = nil
+        killer.request_id = nil
+        killer.pathfinder_request = nil
+      end
       killer.ok_state = kState_idle
       return
     end
@@ -546,10 +560,11 @@ local function trans_killer_planning( killer)
         killer.vehicle.add_autopilot_destination( { x=x, y=y})
       end
     end
+    another_round = true
   end
 
   -- Check the request needs to be tried again
-  if killer.request_id and global.pathfinder_requests and not global.pathfinder_requests[killer.request_id] then
+  if another_round and killer.request_id and global.pathfinder_requests and not global.pathfinder_requests[killer.request_id] then
     local request = killer.pathfinder_request
     if request then
       local request_id = nauvis.request_path(request)
@@ -560,13 +575,22 @@ local function trans_killer_planning( killer)
     end
   end
 
+  if killer.request_id then
+    rendering.draw_line{color=killer.vehicle.color,width=1.0,from=killer.taptap_ctr,to=killer.target_pos,surface=nauvis,time_to_live=29}
+    rendering.draw_text{text=killer.request_id,target=killer.taptap_ctr,color=killer.vehicle.color,surface=nauvis,time_to_live=29}
+    rendering.draw_text{text=killer.request_id,target=killer.target_pos,color=killer.vehicle.color,surface=nauvis,time_to_live=29}
+  end
+
   if killer.ok_state == kState_approach then
     killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
     if killer.cyclesSinceTargetCheck > 5 then
       killer.cyclesSinceTargetCheck = 0
       if not killer.target or not killer.target.valid then
         killer.state = killer.fail_state
-        global.pathfinder_requests[killer.request_id] = nil
+        if killer.request_id then
+          global.pathfinder_requests[killer.request_id] = nil
+          killer.request_id = nil
+        end
         return
       end
     end
@@ -596,7 +620,8 @@ local state_dispatch = {
 
 -- Take the first target and find the closest idle spider
 local function send_closest_spider()
-  if global.targets then
+  local force = game.forces['player']
+  if not force.is_pathfinder_busy() and global.targets then
     if #global.targets > 0 then
       local idx = 1
       if global.targets[idx].valid then
@@ -629,28 +654,62 @@ end
 
 -- Check each idle spider if it can take the target of an approaching spider
 local function steal_target()
-  local killers = global.vehicles or {}
+  local force = game.forces['player']
   local stole = false
-  for id_i,killer_i in pairs(killers) do
-    if killer_i.vehicle and killer_i.vehicle.valid and (killer_i.state == kState_idle) and not vehicle_wants_home(killer_i.vehicle) then
-      local closest_d = nil
-      local closest_killer = nil
-      for id_j,killer_j in pairs(killers) do
-        if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and (killer_j.state == kState_approach) and not vehicle_wants_home(killer_j.vehicle) then
-          local d_i = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
-          local d_j = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
-          if (d_i < d_j) and ((not closest_d) or (d_i < closest_d)) then
-            closest_d = d_i
-            closest_killer = killer_j
+  if not force.is_pathfinder_busy() then
+    local killers = global.vehicles or {}
+    -- Loop over all potential thiefs
+    for id_i,killer_i in pairs(killers) do
+      if killer_i.vehicle and killer_i.vehicle.valid and
+        ((killer_i.state == kState_idle) or (killer_i.state == kState_planning) or (killer_i.state == kState_approach)) and
+        not vehicle_wants_home(killer_i.vehicle) then
+        local closest_d = nil
+        local closest_killer = nil
+        -- Loop over all potential victims
+        for id_j,killer_j in pairs(killers) do
+          if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
+            ((killer_j.state == kState_approach) or (killer_j.state == kState_approach)) and
+            not vehicle_wants_home(killer_j.vehicle) then
+            local d_i = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
+            local d_j = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
+            if (d_i < d_j) and ((not closest_d) or (d_i < closest_d)) and
+              ((d_i > 100) or (d_j > 100)) then
+              closest_d = d_i
+              closest_killer = killer_j
+            end
+          end
+        end
+        if closest_killer then
+          if (killer_i.state == kState_idle) then
+            closest_killer.state = kState_idle
+            closest_killer.vehicle.autopilot_destination = nil
+            plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
+            stole = true
+          else
+            global.pathfinder_requests = global.pathfinder_requests or {}
+            if killer_i.request_id then
+              global.pathfinder_requests[killer_i.request_id] = nil
+              killer_i.request_id = nil
+            end
+            killer_i.state = kState_idle
+            killer_i.vehicle.autopilot_destination = nil
+            if closest_killer.request_id then
+              global.pathfinder_requests[closest_killer.request_id] = nil
+              closest_killer.request_id = nil
+            end
+            closest_killer.state = kState_idle
+            closest_killer.vehicle.autopilot_destination = nil
+            local target_i = killer_i.target
+            local tgt_pos_i = killer_i.target_pos
+            plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
+            plan_path( closest_killer, tgt_pos_i, kState_approach, kState_idle, { target = target_i })
+            stole = true
           end
         end
       end
-      if closest_killer then
-        closest_killer.state = kState_idle
-        closest_killer.vehicle.autopilot_destination = nil
-        plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
-        stole = true
-      end
+    end
+    if stole then
+      game.print('Targets optimised')
     end
   end
   return stole
@@ -658,30 +717,33 @@ end
 
 -- Find the first idle killer and send it to the closest target
 local function send_killer_to_target()
-  global.targets = global.targets or {}
-  local killers = global.vehicles or {}
-  for id,killer in pairs(killers) do
-    if killer.vehicle and killer.vehicle.valid then
-      if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
-        local closest_d = nil
-        local closest_tgt = nil
-        local closest_i = nil
-        for i,tgt in ipairs(global.targets) do
-          if not tgt.valid then
-            table.remove(global.targets,i)
-          else
-            local d = dist_between_pos( tgt.position, killer.vehicle.position)
-            if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt.position)) then
-              closest_d = d
-              closest_tgt = tgt
-              closest_i = i
+  local force = game.forces['player']
+  if not force.is_pathfinder_busy() then
+    global.targets = global.targets or {}
+    local killers = global.vehicles or {}
+    for id,killer in pairs(killers) do
+      if killer.vehicle and killer.vehicle.valid then
+        if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
+          local closest_d = nil
+          local closest_tgt = nil
+          local closest_i = nil
+          for i,tgt in ipairs(global.targets) do
+            if not tgt.valid then
+              table.remove(global.targets,i)
+            else
+              local d = dist_between_pos( tgt.position, killer.vehicle.position)
+              if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt.position)) then
+                closest_d = d
+                closest_tgt = tgt
+                closest_i = i
+              end
             end
           end
-        end
-        if closest_i then
-          plan_path( killer, closest_tgt.position, kState_approach, kState_idle, { target = closest_tgt })
-          table.remove(global.targets,closest_i)
-          return
+          if closest_i then
+            plan_path( killer, closest_tgt.position, kState_approach, kState_idle, { target = closest_tgt })
+            table.remove(global.targets,closest_i)
+            return
+          end
         end
       end
     end
@@ -735,11 +797,6 @@ local function spidertron_find_targets()
   end
 end
 
-local function spidertron_refresh_target_lists()
-  refresh_target_list()
-end
-
-
 -- Register the vehicle detector
 script.on_event(defines.events.on_entity_renamed, detect_vehicles)
 script.on_event(defines.events.on_entity_cloned, detect_vehicles)
@@ -751,14 +808,19 @@ script.on_event(defines.events.on_chart_tag_added, detect_homebases)
 script.on_event(defines.events.on_chart_tag_modified, detect_homebases)
 script.on_event(defines.events.on_chart_tag_removed, detect_homebases)
 
--- Register the cyclic events
+-- Start path search to the targets 10x per seconds
 script.on_nth_tick(6, spidertron_assign_targets)
-script.on_nth_tick(300, spidertron_reassign_targets)
-script.on_nth_tick(12, spidertron_find_targets)
-script.on_nth_tick(3600, spidertron_refresh_target_lists)
 
+-- Sort targets by distance every 5 seconds
+script.on_nth_tick(300, spidertron_reassign_targets)
+
+-- Process the target list 5x per second
+script.on_nth_tick(12, spidertron_find_targets)
+
+-- Update state 2x per second
 script.on_nth_tick(30, spidertron_state_machine)
-script.on_nth_tick(10000, spidertron_clear_blocklist)
+-- Clear every 30 minutes
+script.on_nth_tick(181800, spidertron_clear_blocklist)
 
 -- Register the path planner
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
