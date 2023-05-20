@@ -160,7 +160,6 @@ local function find_valid_targets()
     global.enemy_list = targets
     if #targets > 0 then
       game.print( #targets .. ' enemies of the realm found')
-      global.target_blockers = {}
     end
   end
   local some_checked = false
@@ -197,10 +196,6 @@ local function find_valid_targets()
         end
       end
       checked = checked + 1
-    end
-    if #global.enemy_list == 0 then
-      game.print( #valid_targets .. ' enemies in pollution')
-      global.enemy_list = nil
     end
   end
   global.targets = valid_targets
@@ -250,6 +245,7 @@ local function find_chunks_to_explore()
       if not chunk then
         game.print( #valid_targets .. ' places to visit')
         global.chunk_iterator = nil
+        global.enemy_list = nil
         break
       end
       local map_pos = interesting_for_exploration(chunk)
@@ -575,6 +571,10 @@ local function trans_killer_planning( killer)
     end
   end
 
+  if not killer.request_id then
+    killer.state = kState_idle
+  end
+
   if killer.request_id then
     rendering.draw_line{color=killer.vehicle.color,width=1.0,from=killer.taptap_ctr,to=killer.target_pos,surface=nauvis,time_to_live=29}
     rendering.draw_text{text=killer.request_id,target=killer.taptap_ctr,color=killer.vehicle.color,surface=nauvis,time_to_live=29}
@@ -621,7 +621,7 @@ local state_dispatch = {
 -- Take the first target and find the closest idle spider
 local function send_closest_spider()
   local force = game.forces['player']
-  if not force.is_pathfinder_busy() and global.targets then
+  if (not force.is_pathfinder_busy()) and global.targets then
     if #global.targets > 0 then
       local idx = 1
       if global.targets[idx].valid then
@@ -645,9 +645,13 @@ local function send_closest_spider()
             return
           end
           plan_path( closest_killer, tgt_pos, kState_approach, kState_idle, { target = global.targets[idx] })
+          game.print( 'Vehicle ' .. closest_killer.vehicle.unit_number .. ' sent to (' .. tgt_pos.x .. ',' .. tgt_pos.y .. ')')
         end
       end
       table.remove(global.targets,idx)
+    else
+      -- No more targets, clear the block list
+      global.target_blockers = {}
     end
   end
 end
@@ -661,7 +665,9 @@ local function steal_target()
     -- Loop over all potential thiefs
     for id_i,killer_i in pairs(killers) do
       if killer_i.vehicle and killer_i.vehicle.valid and
-        ((killer_i.state == kState_idle) or (killer_i.state == kState_planning) or (killer_i.state == kState_approach)) and
+        ( (killer_i.state == kState_idle) or
+          ((killer_i.state == kState_planning) and (killer_i.ok_state == kState_approach)) or
+          (killer_i.state == kState_approach)) and
         not vehicle_wants_home(killer_i.vehicle) then
         local closest_d = nil
         local closest_killer = nil
@@ -673,7 +679,8 @@ local function steal_target()
             local d_i = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
             local d_j = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
             if (d_i < d_j) and ((not closest_d) or (d_i < closest_d)) and
-              ((d_i > 100) or (d_j > 100)) then
+              ((d_i > 100) or (d_j > 100)) and
+              (math.abs(d_i - d_j) > 200) then
               closest_d = d_i
               closest_killer = killer_j
             end
@@ -784,11 +791,7 @@ end
 
 local function spidertron_assign_targets()
   send_closest_spider()
-  -- send_killer_to_target()
-end
-
-local function spidertron_clear_blocklist()
-  global.target_blockers = {}
+  send_closest_spider()
 end
 
 local function spidertron_find_targets()
@@ -819,8 +822,6 @@ script.on_nth_tick(12, spidertron_find_targets)
 
 -- Update state 2x per second
 script.on_nth_tick(30, spidertron_state_machine)
--- Clear every 30 minutes
-script.on_nth_tick(181800, spidertron_clear_blocklist)
 
 -- Register the path planner
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)

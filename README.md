@@ -19,15 +19,15 @@
     - [X] Bug fix retreat: Don't plan
     - [X] Bug fix: Don't delete autopilot path after attack, before retreat
 - 0.2: Explorer
-    - [ ] Ensure visibility around pollution: use idle killers
+    - [X] Ensure visibility around pollution: use idle killers
+    - [ ] Don't send killers to uncharted targets
 - 0.3: Optimisation
-    - [ ] Select non-polluted targets close by
-    - [ ] Hierarchical planner / Generate better paths
-    - [ ] Planning cache / not all spiders plan the same target
+    - [X] Hierarchical planner / Generate better paths / internal planner
+    - [X] Planning cache / not all spiders plan the same target
     - [ ] Parameter / settings
     - [ ] Fine tuning default parameters
     - [ ] Call home button
-    - [ ] Deal with landfill
+    - [X] Deal with landfill
 - 0.4: Multiple killer/homebase groups
 - 0.5: Hunter function
 
