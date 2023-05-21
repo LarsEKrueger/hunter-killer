@@ -238,7 +238,7 @@ local function find_chunks_to_explore()
 
   local valid_targets = global.targets or {}
   if global.chunk_iterator then
-    local chunks_to_check = 100
+    local chunks_to_check = 500
     local checked = 0
     while (checked < chunks_to_check) do
       local chunk = global.chunk_iterator()
@@ -285,7 +285,7 @@ local function plan_path( killer, target, ok_state, fail_state, info)
 
   local pathing_collision_mask = {"water-tile", "consider-tile-transitions", "colliding-with-tiles-only", "not-colliding-with-itself"}
   local request = {
-    bounding_box =  {{-1, -1}, {1, 1}},
+    bounding_box =  {{-2, -2}, {2, 2}},
     collision_mask = pathing_collision_mask,
     start = killer.vehicle.position,
     goal = target,
@@ -645,7 +645,6 @@ local function send_closest_spider()
             return
           end
           plan_path( closest_killer, tgt_pos, kState_approach, kState_idle, { target = global.targets[idx] })
-          game.print( 'Vehicle ' .. closest_killer.vehicle.unit_number .. ' sent to (' .. tgt_pos.x .. ',' .. tgt_pos.y .. ')')
         end
       end
       table.remove(global.targets,idx)
@@ -665,34 +664,58 @@ local function steal_target()
     -- Loop over all potential thiefs
     for id_i,killer_i in pairs(killers) do
       if killer_i.vehicle and killer_i.vehicle.valid and
-        ( (killer_i.state == kState_idle) or
-          ((killer_i.state == kState_planning) and (killer_i.ok_state == kState_approach)) or
-          (killer_i.state == kState_approach)) and
         not vehicle_wants_home(killer_i.vehicle) then
-        local closest_d = nil
-        local closest_killer = nil
-        -- Loop over all potential victims
-        for id_j,killer_j in pairs(killers) do
-          if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
-            ((killer_j.state == kState_approach) or (killer_j.state == kState_approach)) and
-            not vehicle_wants_home(killer_j.vehicle) then
-            local d_i = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
-            local d_j = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
-            if (d_i < d_j) and ((not closest_d) or (d_i < closest_d)) and
-              ((d_i > 100) or (d_j > 100)) and
-              (math.abs(d_i - d_j) > 200) then
-              closest_d = d_i
-              closest_killer = killer_j
+        if (killer_i.state == kState_idle) then
+          -- Loop over all potential victims, find out if killer_i is closer and steal target
+          local closest_d = nil
+          local closest_killer = nil
+          for id_j,killer_j in pairs(killers) do
+            if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
+              ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
+              not vehicle_wants_home(killer_j.vehicle) then
+              local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
+              local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
+              if (d_ij < d_jj) and  ((not closest_d) or (d_ij < closest_d)) then
+                closest_d = d_ij
+                closest_killer = killer_j
+              end
             end
           end
-        end
-        if closest_killer then
-          if (killer_i.state == kState_idle) then
+          if closest_killer then
+            global.pathfinder_requests = global.pathfinder_requests or {}
+            if closest_killer.request_id then
+              global.pathfinder_requests[closest_killer.request_id] = nil
+              closest_killer.request_id = nil
+            end
             closest_killer.state = kState_idle
             closest_killer.vehicle.autopilot_destination = nil
             plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
             stole = true
-          else
+          end
+        elseif ((killer_i.state == kState_planning) and (killer_i.ok_state == kState_approach)) or
+          (killer_i.state == kState_approach) then
+          -- Loop over all potential victims, find out if switching targets gives an smaller total sum of distance
+          local closest_d = nil
+          local closest_killer = nil
+          for id_j,killer_j in pairs(killers) do
+            if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
+              ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
+              not vehicle_wants_home(killer_j.vehicle) then
+              local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
+              local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
+              local d_ji = dist_between_pos(killer_j.vehicle.position,killer_i.target_pos)
+              local d_ii = dist_between_pos(killer_i.vehicle.position,killer_i.target_pos)
+              local d_switch = d_ji + d_ij
+              local d_keep = d_ii + d_jj
+              if ((not closest_d) or (d_switch < closest_d)) and
+                (d_switch < d_keep) and -- Switching reduces overall distance
+                (math.abs(d_switch - d_keep) > 200) then
+                closest_d = d_i
+                closest_killer = killer_j
+              end
+            end
+          end
+          if closest_killer then
             global.pathfinder_requests = global.pathfinder_requests or {}
             if killer_i.request_id then
               global.pathfinder_requests[killer_i.request_id] = nil
@@ -714,10 +737,7 @@ local function steal_target()
           end
         end
       end
-    end
-    if stole then
-      game.print('Targets optimised')
-    end
+    end -- for killer_i
   end
   return stole
 end
