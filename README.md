@@ -2,32 +2,37 @@
 
 ## Introduction
 
- As I find it boring to play without biters and too annoying to deal with them
- manually, I created this mod.
+As I find it boring to play without biters and too annoying to deal with them
+manually, I created this mod.
 
- If you activate this mod, all spidertrons named *Killer* will find the nearest
- spawner or worm and perform a hit-and-run attack on it. That means your
- killers need to be armed with either lasers or rockets. Should they take
- damage or run low on ammo, they will automatically to the closest marker
- named *Homebase* and wait there until they have been repaired and rearmed.
+If you activate this mod, all spidertrons named *Killer* will find the nearest
+spawner or worm and perform a hit-and-run attack on it. That means your
+killers need to be armed with either lasers or rockets. Should they take
+damage or run low on ammo, they will automatically to the closest marker
+named *Homebase* and wait there until they have been repaired and rearmed.
+
+If there are no enemies to kill, your *Killer*s will walk around the map to
+ensure that there is always an strech of unpolluted area between the explored
+and the unknown. This ensures that biters have no reason to attack you.
+
+Be aware that this is imperfect. Sometimes *Killer*s walk through the middle of
+nests and get damaged faster than they can escape. Sometimes, they can't find a
+way to reach an enemy.
 
 ## Roadmap / ChangeLog
 
 - 0.1: Killer function
 - 0.1.1: Fixes
-    - [X] MIT License
-    - [X] Bug fix retreat: Don't plan
-    - [X] Bug fix: Don't delete autopilot path after attack, before retreat
 - 0.2: Explorer
     - [X] Ensure visibility around pollution: use idle killers
-    - [ ] Don't send killers to uncharted targets
-- 0.3: Optimisation
     - [X] Hierarchical planner / Generate better paths / internal planner
     - [X] Planning cache / not all spiders plan the same target
+    - [X] Deal with landfill
+    - [ ] Don't send killers to uncharted targets
+- 0.3: Optimisation
     - [ ] Parameter / settings
     - [ ] Fine tuning default parameters
     - [ ] Call home button
-    - [X] Deal with landfill
 - 0.4: Multiple killer/homebase groups
 - 0.5: Hunter function
 
@@ -71,17 +76,12 @@ The conditions to switch from one state to another are:
 | planning   | Sent somewhere by remote.                        | walking |
 | walking    | Arrived at target.                               | idle |
 
-Since the built-in path finding algorithm doesn't seem to work for longer
-distances, this mod implements its own. It exploits the fact that spidertrons
-can walk everywhere but on water. To keep things fair, *Killer*s will not plan
-a route through uncharted territory.
-
 The planning takes time. Therefore, the spidertrons will walk in circles to
 evade spitter fire. Planning itself is done in the background, at a pace of 500
-tiles/cycle or 5000 tiles/second at full UPS. The computation is shared evenly
-between all spidertrons in *planning* state. Also, the planner can become
-distracted by pockets and peninsulas. Therefore, in practice, less than 100
-tiles/seconds of progress towards the target is made.
+tiles/cycle or 8000 tiles/cycle or 480000 tiles/second at full UPS. The
+computation is shared evenly between all spidertrons in *planning* state. Also,
+the planner can become distracted by pockets and peninsulas. Therefore, in
+practice, less than 10000 tiles/seconds of progress towards the target is made.
 
 If the target is destroyed during planning, the spidertron goes back to *idle*
 state. This checked every few seconds.
@@ -91,12 +91,16 @@ state. This checked every few seconds.
 Spidertrons, even those controlled by an "advanced" AI such as this mod, are not
 very smart.
 
-They like the scenic route along the edge of a lake and -- literally
--- go the extra mile to see it. A future version might fix this.
-
 Spidertrons are also very single-minded. They approach a target with complete
 disregard for other targets. They sometimes trample through big nests and get
 badly damaged in the process.
 
 In these situations you have to help the Spidertrons. Use the *Spidertron Squae
 Control* or similar mods to redirect them.
+
+The mod *Constructron Continued* is helpful to pave bridges to peninsulas.
+
+If the pathfinder seems stuck (no activitity from *Killer*s, at least one is
+planning), issue the command `game.forces['player'].kill_all_units()` in the
+console window. This will clear the pathfinder cache. Move the continuously
+planning *Killer* a bit and you should see activity soon.
