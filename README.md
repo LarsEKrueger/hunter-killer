@@ -32,9 +32,9 @@ way to reach an enemy.
 - 0.3: Optimisation
     - [ ] Parameter / settings
     - [ ] Fine tuning default parameters
-    - [ ] Call home button
-- 0.4: Multiple killer/homebase groups
-- 0.5: Hunter function
+    - [ ] Plan path around nests
+- 0.4: Hunter function
+- 0.5: Multiple killer/homebase groups
 
 ## How does the *Killer* operate?
 
