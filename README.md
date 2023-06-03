@@ -11,6 +11,9 @@ killers need to be armed with either lasers or rockets. Should they take
 damage or run low on ammo, they will automatically to the closest marker
 named *Homebase* and wait there until they have been repaired and rearmed.
 
+To mark a *Homebase*, create a map marker with the name *Homebase*. Thanks
+sOvr9000 for the better wording.
+
 If there are no enemies to kill, your *Killer*s will walk around the map to
 ensure that there is always an strech of unpolluted area between the explored
 and the unknown. This ensures that biters have no reason to attack you.
@@ -28,9 +31,14 @@ way to reach an enemy.
     - [X] Hierarchical planner / Generate better paths / internal planner
     - [X] Planning cache / not all spiders plan the same target
     - [X] Deal with landfill
-    - [ ] Don't send killers to uncharted targets
+    - [X] Don't send killers to uncharted targets
+- 0.2.1: Messages
+    - [ ] Suppress base count message if number is unchanged
+    - [ ] Improve performance of spider recount
+    - [ ] Suppress spider count message if unchanged
 - 0.3: Optimisation
     - [ ] Parameter / settings
+    - [ ] Support for spiders with repair drones
     - [ ] Fine tuning default parameters
     - [ ] Plan path around nests
 - 0.4: Hunter function
