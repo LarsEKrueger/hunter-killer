@@ -1,4 +1,4 @@
- # Factorio Mod: Turn Spidertrons into automatic biter killing machines
+# Factorio Mod: Turn Spidertrons into automatic biter killing machines
 
 ## Introduction
 
@@ -103,12 +103,12 @@ Spidertrons are also very single-minded. They approach a target with complete
 disregard for other targets. They sometimes trample through big nests and get
 badly damaged in the process.
 
-In these situations you have to help the Spidertrons. Use the *Spidertron Squae
+In these situations you have to help the Spidertrons. Use the *Spidertron Squad
 Control* or similar mods to redirect them.
 
 The mod *Constructron Continued* is helpful to pave bridges to peninsulas.
 
-If the pathfinder seems stuck (no activitity from *Killer*s, at least one is
+If the pathfinder seems stuck (no activity from *Killer*s, at least one is
 planning), issue the command `game.forces['player'].kill_all_units()` in the
 console window. This will clear the pathfinder cache. Move the continuously
 planning *Killer* a bit and you should see activity soon.
