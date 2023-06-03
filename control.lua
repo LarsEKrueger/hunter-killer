@@ -208,7 +208,7 @@ local function interesting_for_exploration( chunk)
   local nauvis = game.surfaces['nauvis']
   local uncharted = 0
   local polluted = 0
-  if chunk then
+  if chunk and force.is_chunk_charted('nauvis', {chunk.x,chunk.y}) then
     local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
     if not is_target_blocked(map_pos) then
       for dx = -2,2 do
