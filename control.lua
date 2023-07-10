@@ -755,11 +755,11 @@ local function send_killer_to_target()
           local closest_tgt = nil
           local closest_i = nil
           for i,tgt in ipairs(global.targets) do
-            if not tgt.valid then
+            if (not tgt.valid) or is_target_blocked(tgt.position) then
               table.remove(global.targets,i)
             else
               local d = dist_between_pos( tgt.position, killer.vehicle.position)
-              if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt.position)) then
+              if ((not closest_d) or (d < closest_d)) then
                 closest_d = d
                 closest_tgt = tgt
                 closest_i = i
