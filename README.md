@@ -36,6 +36,7 @@ way to reach an enemy.
     - [ ] Suppress base count message if number is unchanged
     - [ ] Improve performance of spider recount
     - [ ] Suppress spider count message if unchanged
+    - [ ] Print number of targets as sparklines
 - 0.3: Optimisation
     - [ ] Parameter / settings
     - [ ] Support for spiders with repair drones
