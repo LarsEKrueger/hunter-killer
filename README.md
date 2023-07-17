@@ -27,12 +27,10 @@ way to reach an enemy.
 - 0.1: Killer function
 - 0.1.1: Fixes
 - 0.2: Explorer
-    - [X] Ensure visibility around pollution: use idle killers
-    - [X] Hierarchical planner / Generate better paths / internal planner
-    - [X] Planning cache / not all spiders plan the same target
-    - [X] Deal with landfill
-    - [X] Don't send killers to uncharted targets
-- 0.2.1: Messages
+- 0.2.1: Bug fixes
+    - [X] Restart target search if remaining targets are all blocked
+    - [X] Small fleets of spiders look for closest target, not oldest target
+- 0.2.2: Messages
     - [ ] Suppress base count message if number is unchanged
     - [ ] Improve performance of spider recount
     - [ ] Suppress spider count message if unchanged
