@@ -38,6 +38,7 @@ way to reach an enemy.
 - 0.3: Optimisation
     - [ ] Parameter / settings
     - [ ] Support for spiders with repair drones
+    - [ ] Support for spiders without rockets
     - [ ] Fine tuning default parameters
     - [ ] Plan path around nests
 - 0.4: Hunter function
