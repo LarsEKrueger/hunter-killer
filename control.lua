@@ -5,22 +5,24 @@
 ]]
 
 local PriorityQueue = require 'PriorityQueue'
+local StatisticsReporter = require 'StatisticsReporter'
+local reporters = require 'reporters'
 
 -- Count and print number of killers
 local function count_killers(vehicles, suffix)
   local killer_count = table_size( vehicles)
-  game.print(killer_count .. ' killer spidertrons' .. suffix)
+  global.report_killers:set(killer_count)
 end
 
 -- Count and print number of homebases
-local function count_bases(bases, suffix)
+local function count_bases(bases)
   local count = 0
   local b = bases
   while b do
     count = count + 1
     b=b.nxt
   end
-  game.print(count .. ' home bases' .. suffix)
+  global.report_bases:set(count)
 end
 
 -- Check if a vehicle is eligible to be managed by the mod.
@@ -90,7 +92,6 @@ end
 
 -- Detect all homebase objects
 local function detect_homebases()
-
   -- Get the list of homebase objects
   local bases = nil
 
@@ -110,7 +111,7 @@ local function detect_homebases()
   -- Write back the list
   global.homebases = bases
 
-  count_bases(global.homebases, ' managed')
+  count_bases(global.homebases)
 end
 
 -- Compute the distance between two MapPositions
@@ -159,7 +160,7 @@ local function find_valid_targets()
     }
     global.enemy_list = targets
     if #targets > 0 then
-      game.print( #targets .. ' enemies of the realm found')
+      global.report_targets:set(#targets)
     end
   end
   local some_checked = false
@@ -243,7 +244,7 @@ local function find_chunks_to_explore()
     while (checked < chunks_to_check) do
       local chunk = global.chunk_iterator()
       if not chunk then
-        game.print( #valid_targets .. ' places to visit')
+        global.report_places:set( #valid_targets)
         global.chunk_iterator = nil
         global.enemy_list = nil
         break
@@ -606,7 +607,6 @@ local function trans_killer_walking( killer)
   end
 end
 
-
 local state_dispatch = {
  [kState_idle] = trans_killer_idle,
  [kState_approach] = trans_killer_approach,
@@ -851,6 +851,11 @@ script.on_nth_tick(30, spidertron_state_machine)
 -- Register the path planner
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
 
--- Register the metatables for PriorityQueue
+-- Register the metatables
 script.register_metatable( 'PriorityQueue', getmetatable(PriorityQueue))
 script.register_metatable( 'PriorityQueueMt', getmetatable(PriorityQueue.new()))
+script.register_metatable( 'StatisticsReporterMt', StatisticsReporter.metatable)
+
+-- Init globals
+script.on_init( reporters.ensure_globals)
+script.on_configuration_changed( reporters.ensure_globals)

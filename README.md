@@ -28,12 +28,11 @@ way to reach an enemy.
 - 0.1.1: Fixes
 - 0.2: Explorer
 - 0.2.1: Bug fixes
-    - [X] Restart target search if remaining targets are all blocked
-    - [X] Small fleets of spiders look for closest target, not oldest target
 - 0.2.2: Messages
     - [ ] Suppress base count message if number is unchanged
     - [ ] Improve performance of spider recount
     - [ ] Suppress spider count message if unchanged
+    - [ ] Suppress target count message if unchanged
     - [ ] Print number of targets as sparklines
 - 0.3: Optimisation
     - [ ] Parameter / settings
