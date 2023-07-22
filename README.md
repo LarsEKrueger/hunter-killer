@@ -29,19 +29,20 @@ way to reach an enemy.
 - 0.2: Explorer
 - 0.2.1: Bug fixes
 - 0.2.2: Messages
-    - [ ] Suppress base count message if number is unchanged
-    - [ ] Improve performance of spider recount
-    - [ ] Suppress spider count message if unchanged
-    - [ ] Suppress target count message if unchanged
-    - [ ] Print number of targets as sparklines
+    - [X] Suppress base count message if number is unchanged
+    - [X] Improve performance of spider recount
+    - [X] Suppress spider count message if unchanged
+    - [X] Suppress target count message if unchanged
+    - [X] Print number of targets as sparklines
 - 0.3: Optimisation
+    - [ ] Plan path around nests
     - [ ] Parameter / settings
+    - [ ] Fine tuning default parameters
+- 0.4: Optimisation
     - [ ] Support for spiders with repair drones
     - [ ] Support for spiders without rockets
-    - [ ] Fine tuning default parameters
-    - [ ] Plan path around nests
-- 0.4: Hunter function
-- 0.5: Multiple killer/homebase groups
+- 0.5: Hunter function
+- 0.6: Multiple killer/homebase groups
 
 ## How does the *Killer* operate?
 
@@ -58,7 +59,7 @@ The spawners and worms will be called *targets* in the following descriptions.
 |-----------|-----------------------------------------------|-------|
 | idle      | Wait for a spawner / work to become a target. | White |
 | planning  | Waiting for the path planner to finish        | Yellow |
-| Walking   | Going to where the autopilot leads it.        | Grey |
+| walking   | Going to where the autopilot leads it.        | Grey |
 | approach  | Walk up to the target.                        | Orange |
 | attack    | Go towards the target until it is destroyed.  | Red |
 | retreat   | Go back to the latest safe position.          | Cyan |
@@ -84,14 +85,47 @@ The conditions to switch from one state to another are:
 | walking    | Arrived at target.                               | idle |
 
 The planning takes time. Therefore, the spidertrons will walk in circles to
-evade spitter fire. Planning itself is done in the background, at a pace of 500
-tiles/cycle or 8000 tiles/cycle or 480000 tiles/second at full UPS. The
-computation is shared evenly between all spidertrons in *planning* state. Also,
-the planner can become distracted by pockets and peninsulas. Therefore, in
-practice, less than 10000 tiles/seconds of progress towards the target is made.
+evade spitter fire. Planning itself is done in the background, at a pace
+deermined by the game engine. The computation is shared evenly between all
+spidertrons in *planning* state. Also, the planner can become distracted by
+pockets and peninsulas.
 
 If the target is destroyed during planning, the spidertron goes back to *idle*
 state. This checked every few seconds.
+
+## Messages
+
+The mod reports the number of active *Homebase*s and *Killer*s whenever they change.
+
+After the completion of a scan, the number of nests and worms in the explored
+part of the maps is reported as *enemies of the realm*. This includes enemies
+on unreachable islands.
+
+As soon as all enemies have been scanned to be in or close to the pollution --
+and therefore a thread -- the mod scans the map to find places to explore. It
+will always try to keep a gap of two chunks (Each chunk is 32x32 tiles and
+corresponds to the blocks of identical pollution you see in the map.) around
+the edge of the pollution. This allows the *Killer*s to keep up with the
+growing cloud.
+
+When the scan for places to explore has been completed, the mod reports the
+number of enemies in the pollution and chucks at the edge of the pollution as
+*places to visit*.
+
+Enemies and places are only reported if the number increased since the last
+scan. If you don't see a message, your *Killer*s keep up with the growth of the
+pollution and the enemy explansion.
+
+For all these four numbers, a history of the last 8 values is displayed. The
+bars are normalized to minimum and maximum. The numerical value of oldest value
+is displayed on the left, the newest value on the right. Thus a display of
+
+123 ▁▂▃▄▁▆▇█ 456
+
+indicates that you had 123 items at the beginning. The number rose
+steadily until the 5th update, where it dropped to close to 123
+again (if it had dropped a lot below 123, the first bar would be higher). After
+that it resumed growing until it reached 456 with the current update.
 
 ## Limitations and Recommended Mods
 
