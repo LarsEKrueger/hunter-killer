@@ -68,7 +68,7 @@ git tag "v${version}"
 # Create release zip
 zipfolder="../hunter-killer-${version}"
 mkdir ${zipfolder}
-cp *.json README.md LICENSE *.lua ${zipfolder}
+cp -r *.json README.md LICENSE *.lua migrations ${zipfolder}
 pushd ..
 zip -r "hunter-killer-${version}.zip" "hunter-killer-${version}"
 popd
