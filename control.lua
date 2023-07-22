@@ -386,7 +386,7 @@ end
 local function vehicle_wants_home(vehicle)
   local retreat = false
   -- is vehicle damaged?
-  if vehicle.get_health_ratio() < 0.5 then
+  if vehicle.get_health_ratio() < 0.7 then
     retreat = true
   end
   -- is ammo low?
