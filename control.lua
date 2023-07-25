@@ -7,6 +7,8 @@
 local PriorityQueue = require 'PriorityQueue'
 local StatisticsReporter = require 'StatisticsReporter'
 local reporters = require 'reporters'
+local collision_mask_util = require 'collision-mask-util'
+local util = require 'util'
 
 -- Count and print number of killers
 local function count_killers(vehicles, suffix)
@@ -284,19 +286,32 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     killer.taptap_ctr = killer.vehicle.position
   end
 
+  -- Set a reasonable default for the collision mask to avoid walking through water
   local pathing_collision_mask = {"water-tile", "consider-tile-transitions", "colliding-with-tiles-only", "not-colliding-with-itself"}
+  -- Find the first custom collision layer, hoping that it's the one we created. Set this as the collision mask for the search.
+  local water_proto = game.tile_prototypes['water']
+  local water_collision_mask = water_proto.collision_mask
+  for name,v in pairs(water_collision_mask) do
+    if util.string_starts_with(name,'layer-') then
+      pathing_collision_mask = { name }
+      break
+    end
+  end
+
   local request = {
-    bounding_box =  {{-2, -2}, {2, 2}},
+    -- Keep a respectful distance to water and nests
+    bounding_box =  {{-8, -8}, {8, 8}},
     collision_mask = pathing_collision_mask,
     start = killer.vehicle.position,
     goal = target,
     force = killer.vehicle.force,
-    radius = 1,
+    -- Don't need to get too close
+    radius = 4,
     pathfinding_flags = {
       cache = true,
       low_priority = false,
     },
-    path_resolution_modifier = -4,
+    path_resolution_modifier = -3,
     killer = killer,
   }
 
