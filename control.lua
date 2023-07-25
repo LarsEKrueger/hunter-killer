@@ -810,13 +810,7 @@ local function spidertron_reassign_targets()
 end
 
 local function spidertron_assign_targets()
-  local killers = global.vehicles or {}
-  if table_size(killers) < 5 then
-    send_killer_to_target()
-  else
-    send_closest_spider()
-    send_closest_spider()
-  end
+  send_closest_spider()
 end
 
 local function spidertron_find_targets()
