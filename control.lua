@@ -495,9 +495,11 @@ local function trans_killer_attack( killer)
       killer.target.valid = nil
       killer.target.health = nil
     end
-    killer.taptap_ctr = nil
-    killer.vehicle.autopilot_destination = nil
-    killer.state = kState_idle
+    local n = #killer.safe_path
+    for i = 1, n do
+      killer.vehicle.add_autopilot_destination( killer.safe_path[n+1-i])
+    end
+    killer.state = kState_retreat
   end
 end
 
