@@ -419,7 +419,6 @@ local function trans_killer_idle( killer, valid_targets)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
   if vehicle_wants_home(killer.vehicle) then
-    game.print('idle vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
     vehicle_go_home(killer)
   end
 end
@@ -453,7 +452,6 @@ local function trans_killer_approach( killer)
     idle=true
   end
   if vehicle_wants_home(killer.vehicle) then
-    game.print('approaching vehicle ' .. killer.vehicle.unit_number .. ' wants to go home')
     vehicle_go_home(killer)
     attack = false
     idle = false
