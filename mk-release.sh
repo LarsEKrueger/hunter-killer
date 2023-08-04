@@ -66,7 +66,7 @@ git commit -a -m "Version bump to ${version}"
 git tag "v${version}"
 
 # Create release zip
-zipfolder="../hunter-killer-${version}"
+zipfolder="../hunter-killer"
 mkdir ${zipfolder}
 cp -r *.json README.md LICENSE *.lua migrations ${zipfolder}
 pushd ..
