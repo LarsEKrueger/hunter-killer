@@ -29,13 +29,10 @@ way to reach an enemy.
 - 0.2: Explorer
 - 0.2.1: Bug fixes
 - 0.2.2: Messages
-    - [X] Suppress base count message if number is unchanged
-    - [X] Improve performance of spider recount
-    - [X] Suppress spider count message if unchanged
-    - [X] Suppress target count message if unchanged
-    - [X] Print number of targets as sparklines
+- 0.2.3: Improvements
+    - [X] Plan path around nests
+    - [X] Don't print "wants to go home"
 - 0.3: Optimisation
-    - [ ] Plan path around nests
     - [ ] Parameter / settings
     - [ ] Fine tuning default parameters
 - 0.4: Optimisation
