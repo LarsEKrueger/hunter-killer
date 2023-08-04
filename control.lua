@@ -308,7 +308,7 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     -- Don't need to get too close
     radius = 4,
     pathfinding_flags = {
-      cache = true,
+      cache = false,
       low_priority = false,
     },
     path_resolution_modifier = -3,
