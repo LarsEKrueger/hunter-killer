@@ -32,6 +32,7 @@ way to reach an enemy.
 - 0.2.3: Improvements
     - [X] Plan path around nests
     - [X] Don't print "wants to go home"
+- 0.2.4: Fix packager script
 - 0.3: Optimisation
     - [ ] Parameter / settings
     - [ ] Fine tuning default parameters
