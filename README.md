@@ -30,17 +30,15 @@ way to reach an enemy.
 - 0.2.1: Bug fixes
 - 0.2.2: Messages
 - 0.2.3: Improvements
-    - [X] Plan path around nests
-    - [X] Don't print "wants to go home"
 - 0.2.4: Fix packager script
 - 0.3: Optimisation
-    - [ ] Parameter / settings
-    - [ ] Fine tuning default parameters
+    - [X] Parameter / settings
+    - [X] Fine tuning default parameters
 - 0.4: Optimisation
-    - [ ] Support for spiders with repair drones
     - [ ] Support for spiders without rockets
-- 0.5: Hunter function
-- 0.6: Multiple killer/homebase groups
+    - [ ] Support for spiders with repair drones
+- 0.5: Multiple killer groups
+- 0.6: Hunter function
 
 ## How does the *Killer* operate?
 
@@ -125,6 +123,209 @@ steadily until the 5th update, where it dropped to close to 123
 again (if it had dropped a lot below 123, the first bar would be higher). After
 that it resumed growing until it reached 456 with the current update.
 
+## Settings
+
+Beginning version 0.3, the mod has some tunable parameters.
+
+### Number of enemies to check per scan cycle
+
+Every scan cycle ("Number of ticks between scans for enemy/pollution gap") a
+fixed number of detected enemies is scanned if they are close to the pollution.
+The more enemies are scanned, the faster the list of dangerous nests is updated
+and the earlier the spidertrons can pay them a visit. This can lower
+your FPS/UPS and make the game slower.
+
+* Earliest visible effect: Next scan
+* Default: 100
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-enemies-per-cycle`
+
+### Number of chunks to check per scan cycle
+
+Every scan cycle ("Number of ticks between scans for enemy/pollution gap") a
+fixed number of chunks (32x32 tile blocks in the map) is scanned if they are
+close to pollution and unmapped part. The more chunks are scanned, the faster the list of
+potential hiding places is updated and the earlier the spidertrons can
+make sure it's safe there. This can lower your FPS/UPS and make the game
+slower.
+
+* Earliest visible effect: Next scan
+* Default: 500
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-chunks-per-cycle`
+
+### Size of gap between pollution and unmapped
+
+If a chunk is checked to be interesting, a number of chunks around it are
+checked if at least one contains pollution and at least one is unmapped (black
+in the map view). This setting determines the number of chunks to check around
+the current one and therefore the gap between pollution and the unknown.
+
+The value is determined by the range of the spidertron's on-board radar. If the
+gap is set too big, it will visit place that it can't map and therefore visit
+it again next time. This setting is therefore only to accomodate mods that
+increase the range of the Spidertron's radar.
+
+Increasing this number beyond reasonable values (e.g. 5, equal to 160 tiles)
+will result in a noticable slowdown of the game.
+
+* Earliest visible effect: Immediately
+* Default: 2
+* Min: 1
+* Max: 100
+* Unit: chunks (32x32 tiles)
+* Internal name: `hunter-killer-pollution-radius`
+
+### Distance of spidertron path to water/nests
+
+When a spidertron plans a path, it avoids getting too close to nests and water.
+This prevents it from running through nests. You can increase the gap by
+increasing the value. This can block access to otherwise reachable nests on
+peninsulas or in narrow passages between lakes.
+
+* Earliest visible effect: Next path planning
+* Default: 8
+* Min: 1
+* Max: 100
+* Unit: Tiles
+* Internal name: `hunter-killer-pf-bbox`
+
+### Stopping distance to target
+
+When a spidertron plans a path, it tries to get as close to the target as
+possible, but not closer than this distance. Setting this value too high can
+result in pointless trips as nothing is explored or exploded.
+
+* Earliest visible effect: Next path planning
+* Default: 16
+* Min: 1
+* Max: 1000
+* Unit: Tiles
+* Internal name: `hunter-killer-pf-radius`
+
+### Distance to retreat after attack
+
+After a spidertron has reached it's target, it will retrace its steps to a safe
+distance. If it was already closer than this, it will return to the starting
+point.
+
+* Earliest visible effect: Next attack
+* Default: 100
+* Min: 1
+* Max: 1000000
+* Unit: Tiles
+* Internal name: `hunter-killer-retreat-distance`
+
+### Percentage of health to go home
+
+If a spidertron's health falls below this threshold during approach or after
+retreating, it will return to the nearest home base to get repaired. Be aware
+that the value is ignored during attack to not trigger a long and dangerous
+path finding in the middle of a nest.
+
+* Earliest visible effect: Immediately
+* Default: 80
+* Min: 1
+* Max: 99
+* Internal name: `hunter-killer-go-home-health`
+
+### Difference between spidertron path lengths to steal target
+
+Spidertrons gossip from time to time ("Number of ticks between stealing targets") about their targets. If two of them find
+out that switching their targets is significantly less distance for both of
+them, they reconsider their ways. *Significantly* means here: The total
+distance (as the crow flies) between targets after switching is at least
+*value* tiles shorter than the current total distance. *value* means the value of
+this setting.
+
+* Earliest visible effect: Next target steal cycle
+* Default: 200
+* Min: 1
+* Max: 1000000
+* Unit: Tiles
+* Internal name: `hunter-killer-steal-distance`
+
+### Number of cycles between target checks during planning
+
+Every *value* state updates ("Number of ticks between state changes"),
+spidertrons check if their target has been killed by another spidertron.
+*value* means the value of this setting. If the target has been collateral
+damage, they try to pick a new target.
+
+* Earliest visible effect: Immediately
+* Default: 5
+* Min: 0
+* Max: 1000000
+* Internal name: `hunter-killer-target-check-cycles`
+
+### Number of ticks for target search cycles
+
+One tick corresponds to one full update of the game state. If you see 60 UPS,
+60 ticks pass per second.
+
+Every *value* (the value of this setting) ticks, spidertrons check their to-do
+list of places to see and biters to kill. If they find some, one of them starts
+planning.
+
+* Earliest visible effect: New game / after loading
+* Default: 6
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-freq-assign`
+
+### Number of ticks between stealing targets
+
+One tick corresponds to one full update of the game state. If you see 60 UPS,
+60 ticks pass per second.
+
+Every *value* (the value of this setting) ticks, spidertrons compare their maps
+to see if they could be more efficient if they switch targets.
+
+* Earliest visible effect: New game / after loading
+* Default: 180
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-freq-reassign`
+
+### Number of ticks between scans for enemy/pollution gap
+
+One tick corresponds to one full update of the game state. If you see 60 UPS,
+60 ticks pass per second.
+
+Every *value* (the value of this setting) ticks, spidertrons scan a part of the
+list of biter positions or chunks. See "Number of enemies to check per scan
+cycle" and "Number of chunks to check per scan cycle".
+
+The value of this setting can be balanced against the two others to keep the
+UPS high during scanning.
+
+* Earliest visible effect: New game / after loading
+* Default: 12
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-freq-targets`
+
+### Number of ticks between state changes
+
+One tick corresponds to one full update of the game state. If you see 60 UPS,
+60 ticks pass per second.
+
+Every *value* (the value of this setting) ticks, spidertrons reconsider what
+they shall be doing. Most of the time, it's the same as before.
+
+This setting balances the reaction speed (e.g. should a spidertron return home)
+vs. the game speed. Frequent, unnecessary checks slow down the game. Infrequent
+checks could kill a spidertron, because it doesn't go home early enough when it
+gets damaged.
+
+* Earliest visible effect: New game / after loading
+* Default: 30
+* Min: 1
+* Max: 1000000
+* Internal name: `hunter-killer-freq-state`
+
 ## Limitations and Recommended Mods
 
 Spidertrons, even those controlled by an "advanced" AI such as this mod, are not
@@ -143,3 +344,22 @@ If the pathfinder seems stuck (no activity from *Killer*s, at least one is
 planning), issue the command `game.forces['player'].kill_all_units()` in the
 console window. This will clear the pathfinder cache. Move the continuously
 planning *Killer* a bit and you should see activity soon.
+
+## Behavioural changes after updates
+
+## 0.3
+
+You might see a spike in exploration targets, esp. around lakes. This is due to
+a parameter change for the path finder. Now, the path finder will select a
+target, even if more of the center chunk is water. This results in some visits
+to previously ignored chunks when the centre of the lake is unmapped. After
+these lake chunks have been mapped, they edge of the lake will be ignored in
+future scans as before.
+
+Spidertrons will return earlier to base if they are damaged. Threshold was set
+to 80% from 70% before.
+
+Spidertrons will switch targets more frequently. The old cycle time was too
+high and felt sluggish. This can lead to a few bogus switches if a larger
+number of spidertrons is at the same place, e.g. a home base. However, the
+solution will stabilize more quickly to reduce the total amount of travel.

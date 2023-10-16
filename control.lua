@@ -168,7 +168,8 @@ local function find_valid_targets()
   local some_checked = false
   local valid_targets = global.targets or {}
   if global.enemy_list then
-    local enemies_to_check = 100
+    local enemies_to_check = settings.global['hunter-killer-enemies-per-cycle'].value
+    local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
     local checked = 0
 
     local force = game.forces['player']
@@ -181,11 +182,11 @@ local function find_valid_targets()
         if not is_target_blocked(tgt.position) then
           local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
           local is_polluted = false
-          for dx = -2,2 do
+          for dx = -chunk_rad,chunk_rad do
             if is_polluted then
               break
             end
-            for dy = -2,2 do
+            for dy = -chunk_rad,chunk_rad do
               if force.is_chunk_charted('nauvis', {tgt_chunk_pos.x+dx,tgt_chunk_pos.y+dy}) and
                 (nauvis.get_pollution({tgt.position.x+32.0*dx,tgt.position.y+32.0*dy}) > 0.0) then
                 is_polluted = true
@@ -206,7 +207,7 @@ local function find_valid_targets()
 end
 
 -- Return map_pos if chunk is interesting for exploration, nil otherwise
-local function interesting_for_exploration( chunk)
+local function interesting_for_exploration( chunk, chunk_rad)
   local force = game.forces['player']
   local nauvis = game.surfaces['nauvis']
   local uncharted = 0
@@ -214,8 +215,8 @@ local function interesting_for_exploration( chunk)
   if chunk and force.is_chunk_charted('nauvis', {chunk.x,chunk.y}) then
     local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
     if not is_target_blocked(map_pos) then
-      for dx = -2,2 do
-        for dy = -2,2 do
+      for dx = -chunk_rad,chunk_rad do
+        for dy = -chunk_rad,chunk_rad do
           if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
             uncharted = uncharted + 1
           elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
@@ -241,7 +242,8 @@ local function find_chunks_to_explore()
 
   local valid_targets = global.targets or {}
   if global.chunk_iterator then
-    local chunks_to_check = 500
+    local chunks_to_check = settings.global['hunter-killer-chunks-per-cycle'].value
+    local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
     local checked = 0
     while (checked < chunks_to_check) do
       local chunk = global.chunk_iterator()
@@ -251,7 +253,7 @@ local function find_chunks_to_explore()
         global.enemy_list = nil
         break
       end
-      local map_pos = interesting_for_exploration(chunk)
+      local map_pos = interesting_for_exploration(chunk, chunk_rad)
       if map_pos then
         -- Add a fake target and mark it as an exploration target
         valid_targets[#valid_targets+1] = {
@@ -282,7 +284,7 @@ local kState_reArm      = 7
 -- Plan a path from target to current position.
 local function plan_path( killer, target, ok_state, fail_state, info)
   -- Center of the circle we're walking while waiting for the planner to finish
-  if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 32.0 then
+  if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 33.0 then
     killer.taptap_ctr = killer.vehicle.position
   end
 
@@ -298,15 +300,18 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     end
   end
 
+  local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
+  local pf_rad = settings.global['hunter-killer-pf-radius'].value
+
   local request = {
     -- Keep a respectful distance to water and nests
-    bounding_box =  {{-8, -8}, {8, 8}},
+    bounding_box =  {{-pf_bbox, -pf_bbox}, {pf_bbox, pf_bbox}},
     collision_mask = pathing_collision_mask,
     start = killer.vehicle.position,
     goal = target,
     force = killer.vehicle.force,
     -- Don't need to get too close
-    radius = 4,
+    radius = pf_rad,
     pathfinding_flags = {
       cache = false,
       low_priority = false,
@@ -397,11 +402,17 @@ local function vehicle_go_home(killer)
   return ok
 end
 
+-- Get the minimum health to return home as a ratio
+local function get_min_health()
+  local min_health = settings.global['hunter-killer-go-home-health'].value / 100.0
+  return min_health
+end
+
 -- Check if the spidertron needs to go home
-local function vehicle_wants_home(vehicle)
+local function vehicle_wants_home(vehicle, min_health)
   local retreat = false
   -- is vehicle damaged?
-  if vehicle.get_health_ratio() < 0.7 then
+  if vehicle.get_health_ratio() < min_health then
     retreat = true
   end
   -- is ammo low?
@@ -418,7 +429,7 @@ end
 local function trans_killer_idle( killer, valid_targets)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
-  if vehicle_wants_home(killer.vehicle) then
+  if vehicle_wants_home(killer.vehicle, get_min_health()) then
     vehicle_go_home(killer)
   end
 end
@@ -430,9 +441,11 @@ local function trans_killer_approach( killer)
   local attack = false
   local idle = false
   if killer.target and killer.target.valid then
+    local retreat_dist = settings.global['hunter-killer-retreat-distance'].value
     if killer.target.type == 'exploration' then
-      if interesting_for_exploration(killer.target.chunk) then
-        if dist_between_pos(killer.target_pos, killer.vehicle.position) < 100.0 then
+      local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
+      if interesting_for_exploration(killer.target.chunk, chunk_rad) then
+        if dist_between_pos(killer.target_pos, killer.vehicle.position) < retreat_dist then
           attack = true
         end
       else
@@ -440,7 +453,7 @@ local function trans_killer_approach( killer)
       end
     else
       if killer.target.health and killer.target.health > 0.0 then
-        if dist_between_pos(killer.target_pos, killer.vehicle.position) < 100.0 then
+        if dist_between_pos(killer.target_pos, killer.vehicle.position) < retreat_dist then
           attack = true
         end
       end
@@ -451,7 +464,7 @@ local function trans_killer_approach( killer)
   if not have_autopilot(killer.vehicle) then
     idle=true
   end
-  if vehicle_wants_home(killer.vehicle) then
+  if vehicle_wants_home(killer.vehicle, get_min_health()) then
     vehicle_go_home(killer)
     attack = false
     idle = false
@@ -523,8 +536,9 @@ end
 local function trans_killer_re_arm( killer)
   -- green
   killer.vehicle.color = {0.0, 1.0, 0.0, 1.0}
-  if not killer.home_position or dist_between_pos(killer.home_position, killer.vehicle.position) > 10.0 then
-    if vehicle_wants_home(killer.vehicle) then
+  local pf_rad = settings.global['hunter-killer-pf-radius'].value
+  if not killer.home_position or dist_between_pos(killer.home_position, killer.vehicle.position) > pf_rad then
+    if vehicle_wants_home(killer.vehicle, get_min_health()) then
       vehicle_go_home(killer)
       return
     end
@@ -599,7 +613,7 @@ local function trans_killer_planning( killer)
 
   if killer.ok_state == kState_approach then
     killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
-    if killer.cyclesSinceTargetCheck > 5 then
+    if killer.cyclesSinceTargetCheck > settings.global['hunter-killer-target-check-cycles'].value then
       killer.cyclesSinceTargetCheck = 0
       if not killer.target or not killer.target.valid then
         killer.state = killer.fail_state
@@ -635,6 +649,7 @@ local state_dispatch = {
 
 -- Take the first target and find the closest idle spider
 local function send_closest_spider()
+  local min_health = get_min_health()
   local force = game.forces['player']
   if (not force.is_pathfinder_busy()) and global.targets then
     if #global.targets > 0 then
@@ -647,7 +662,7 @@ local function send_closest_spider()
           local closest_killer = nil
           for id,killer in pairs(killers) do
             if killer.vehicle and killer.vehicle.valid then
-              if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
+              if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle, min_health) then
                 local d = dist_between_pos( tgt_pos, killer.vehicle.position)
                 if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt_pos)) then
                   closest_d = d
@@ -677,9 +692,10 @@ local function steal_target()
   if not force.is_pathfinder_busy() then
     local killers = global.vehicles or {}
     -- Loop over all potential thiefs
+    local min_health = get_min_health()
     for id_i,killer_i in pairs(killers) do
       if killer_i.vehicle and killer_i.vehicle.valid and
-        not vehicle_wants_home(killer_i.vehicle) then
+        not vehicle_wants_home(killer_i.vehicle, min_health) then
         if (killer_i.state == kState_idle) then
           -- Loop over all potential victims, find out if killer_i is closer and steal target
           local closest_d = nil
@@ -687,7 +703,7 @@ local function steal_target()
           for id_j,killer_j in pairs(killers) do
             if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
               ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
-              not vehicle_wants_home(killer_j.vehicle) then
+              not vehicle_wants_home(killer_j.vehicle, min_health) then
               local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
               local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
               if (d_ij < d_jj) and  ((not closest_d) or (d_ij < closest_d)) then
@@ -715,7 +731,7 @@ local function steal_target()
           for id_j,killer_j in pairs(killers) do
             if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
               ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
-              not vehicle_wants_home(killer_j.vehicle) then
+              not vehicle_wants_home(killer_j.vehicle, min_health) then
               local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
               local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
               local d_ji = dist_between_pos(killer_j.vehicle.position,killer_i.target_pos)
@@ -763,9 +779,10 @@ local function send_killer_to_target()
   if not force.is_pathfinder_busy() then
     global.targets = global.targets or {}
     local killers = global.vehicles or {}
+    local min_health = get_min_health()
     for id,killer in pairs(killers) do
       if killer.vehicle and killer.vehicle.valid then
-        if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle) then
+        if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle, min_health) then
           local closest_d = nil
           local closest_tgt = nil
           local closest_i = nil
@@ -834,30 +851,30 @@ local function spidertron_find_targets()
   end
 end
 
--- Register the vehicle detector
+-- Register events: vehicle list may have changed
 script.on_event(defines.events.on_entity_renamed, detect_vehicles)
 script.on_event(defines.events.on_entity_cloned, detect_vehicles)
 script.on_event(defines.events.on_entity_died, detect_vehicles, {{filter='vehicle'}})
 script.on_event(defines.events.on_entity_settings_pasted, detect_vehicles)
 
--- Register the homebase detector
+-- Register events: homebase may have changed
 script.on_event(defines.events.on_chart_tag_added, detect_homebases)
 script.on_event(defines.events.on_chart_tag_modified, detect_homebases)
 script.on_event(defines.events.on_chart_tag_removed, detect_homebases)
 
--- Start path search to the targets 10x per seconds
-script.on_nth_tick(6, spidertron_assign_targets)
+-- Register event: Start path search to the targets
+script.on_nth_tick(settings.startup['hunter-killer-freq-assign'].value, spidertron_assign_targets)
 
--- Sort targets by distance every 5 seconds
-script.on_nth_tick(300, spidertron_reassign_targets)
+-- Register event: Sort targets by distance
+script.on_nth_tick(settings.startup['hunter-killer-freq-reassign'].value, spidertron_reassign_targets)
 
--- Process the target list 5x per second
-script.on_nth_tick(12, spidertron_find_targets)
+-- Register event: Process the target list 5x per second
+script.on_nth_tick(settings.startup['hunter-killer-freq-targets'].value, spidertron_find_targets)
 
--- Update state 2x per second
-script.on_nth_tick(30, spidertron_state_machine)
+-- Register event: Update state
+script.on_nth_tick(settings.startup['hunter-killer-freq-state'].value, spidertron_state_machine)
 
--- Register the path planner
+-- Register event: path planner is done
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
 
 -- Register the metatables
