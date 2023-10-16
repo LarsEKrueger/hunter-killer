@@ -605,12 +605,6 @@ local function trans_killer_planning( killer)
     killer.state = kState_idle
   end
 
-  if killer.request_id then
-    rendering.draw_line{color=killer.vehicle.color,width=1.0,from=killer.taptap_ctr,to=killer.target_pos,surface=nauvis,time_to_live=29}
-    rendering.draw_text{text=killer.request_id,target=killer.taptap_ctr,color=killer.vehicle.color,surface=nauvis,time_to_live=29}
-    rendering.draw_text{text=killer.request_id,target=killer.target_pos,color=killer.vehicle.color,surface=nauvis,time_to_live=29}
-  end
-
   if killer.ok_state == kState_approach then
     killer.cyclesSinceTargetCheck = 1 + (killer.cyclesSinceTargetCheck or 0)
     if killer.cyclesSinceTargetCheck > settings.global['hunter-killer-target-check-cycles'].value then

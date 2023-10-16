@@ -1,10 +1,5 @@
 --[[
   settings.lua: Define user-controllable parameters for the factorio mod *HunterKiller*.
-
-  TODO:
-  * Draw debug info ?
-
-  See https://wiki.factorio.com/Tutorial:Mod_settings
 ]]
 
 data:extend({
