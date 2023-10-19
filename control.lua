@@ -410,19 +410,42 @@ end
 
 -- Check if the spidertron needs to go home
 local function vehicle_wants_home(vehicle, min_health)
-  local retreat = false
   -- is vehicle damaged?
   if vehicle.get_health_ratio() < min_health then
-    retreat = true
+    return true
   end
-  -- is ammo low?
+  -- is ammo low there is a logistics request for it?
   local ammo_inv = vehicle.get_inventory(defines.inventory.spider_ammo)
-  if ammo_inv then
-    if ammo_inv.is_empty() then
-      retreat = true
+  local trunk_inv = vehicle.get_inventory(defines.inventory.spider_trunk)
+  local fuel_inv = vehicle.get_inventory(defines.inventory.fuel)
+  -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
+  -- Stop at the first empty logistics slot.
+  local slot = 1
+  while true do
+    local log_req = vehicle.get_vehicle_logistic_slot(slot)
+    if not log_req.name then
+      break
     end
+    local ammo_count = 0
+    local trunk_count = 0
+    local fuel_count = 0
+    if ammo_inv then
+      ammo_count = ammo_inv.get_item_count(log_req.name)
+    end
+    if trunk_inv then
+      trunk_count = trunk_inv.get_item_count(log_req.name)
+    end
+    if fuel_inv then
+      fuel_count = fuel_inv.get_item_count(log_req.name)
+    end
+    -- Ignore auto-trash items
+    if (log_req.max > 0) and ((ammo_count + trunk_count + fuel_count) == 0) then
+      game.print( serpent.line{ n=log_req.name, a=ammo_count, t=trunk_count, f=fuel_count})
+      return true
+    end
+    slot = slot + 1
   end
-  return retreat
+  return false
 end
 
 -- State transition checker for killer spidertrons in idle state
@@ -545,10 +568,38 @@ local function trans_killer_re_arm( killer)
   end
   if killer.vehicle.get_health_ratio() >= 1.0 then
     local ammo_inv = killer.vehicle.get_inventory(defines.inventory.spider_ammo)
-    if ammo_inv then
-      if ammo_inv.is_full() then
-        killer.state = kState_idle
+    local trunk_inv = killer.vehicle.get_inventory(defines.inventory.spider_trunk)
+    local fuel_inv = killer.vehicle.get_inventory(defines.inventory.fuel)
+    -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
+    -- Stop at the first empty logistics slot.
+    local slot = 1
+    local rearmed = true
+    while true do
+      local log_req = killer.vehicle.get_vehicle_logistic_slot(slot)
+      if not log_req.name then
+        break
       end
+      local ammo_count = 0
+      local trunk_count = 0
+      local fuel_count = 0
+      if ammo_inv then
+        ammo_count = ammo_inv.get_item_count(log_req.name)
+      end
+      if trunk_inv then
+        trunk_count = trunk_inv.get_item_count(log_req.name)
+      end
+      if fuel_inv then
+        fuel_count = fuel_inv.get_item_count(log_req.name)
+      end
+      if (ammo_count + trunk_count + fuel_count) < log_req.min then
+        game.print( serpent.line{ n=log_req.name, a=ammo_count, t=trunk_count, f=fuel_count, m=log_req.min})
+        rearmed = false
+        break
+      end
+      slot = slot + 1
+    end
+    if rearmed then
+        killer.state = kState_idle
     end
   end
 end
