@@ -7,7 +7,7 @@ manually, I created this mod.
 
 If you activate this mod, all spidertrons named *Killer* will find the nearest
 spawner or worm and perform a hit-and-run attack on it. That means your
-killers need to be armed with either lasers or rockets. Should they take
+killers need to be armed with lasers and/or rockets. Should they take
 damage or run low on ammo, they will automatically to the closest marker
 named *Homebase* and wait there until they have been repaired and rearmed.
 
@@ -31,12 +31,12 @@ way to reach an enemy.
 - 0.2.2: Messages
 - 0.2.3: Improvements
 - 0.2.4: Fix packager script
-- 0.3: Optimisation
-    - [X] Parameter / settings
-    - [X] Fine tuning default parameters
-- 0.4: Optimisation
-    - [ ] Support for spiders without rockets
-    - [ ] Support for spiders with repair drones
+- 0.3: Settings
+- 0.4: Different Loadouts
+    - [X] Support for spiders without rockets
+    - [X] Support for spiders with repair drones
+        - [X] Disable robotports during attack (Contructron)
+        - [X] Go to idle if vehicle doesn't want to go home in "go-home"
 - 0.5: Multiple killer groups
 - 0.6: Hunter function
 
@@ -49,7 +49,7 @@ Each *Killer* is always in one of the following states. It remains in this
 state and does something until the condition for a new state is fulfilled. The
 state is indicated by the color of the spidertron.
 
-The spawners and worms will be called *targets* in the following descriptions.
+The spawners, worms, and places to explore will be called *targets* in the following descriptions.
 
 | State     | Action                                        | Color |
 |-----------|-----------------------------------------------|-------|
@@ -75,6 +75,7 @@ The conditions to switch from one state to another are:
 | retreat    | Safe position reached, Health and ammo are ok.   | idle |
 | retreat    | Safe position reached, Health or ammo are low.   | planning/go-home |
 | go-home    | Homebase reaced.                                 | re-arm |
+| go-home    | Health and ammo are ok.                          | idle |
 | re-arm     | Health and ammo are ok.                          | idle |
 | planning   | Finding a path to the target                     | attack/go-home |
 | planning   | Sent somewhere by remote.                        | walking |
@@ -82,12 +83,12 @@ The conditions to switch from one state to another are:
 
 The planning takes time. Therefore, the spidertrons will walk in circles to
 evade spitter fire. Planning itself is done in the background, at a pace
-deermined by the game engine. The computation is shared evenly between all
+determined by the game engine. The computation is shared evenly between all
 spidertrons in *planning* state. Also, the planner can become distracted by
 pockets and peninsulas.
 
 If the target is destroyed during planning, the spidertron goes back to *idle*
-state. This checked every few seconds.
+state. This is checked every few seconds (configurable, see settings below).
 
 ## Messages
 
@@ -122,6 +123,22 @@ indicates that you had 123 items at the beginning. The number rose
 steadily until the 5th update, where it dropped to close to 123
 again (if it had dropped a lot below 123, the first bar would be higher). After
 that it resumed growing until it reached 456 with the current update.
+
+## Loadout Variations / Repair Drones
+
+Beginning version 0.4, the mod supports different loadouts, incl. laser-only
+and repair drones.
+
+Re-arming stops when the minimum number of requested items is loaded into
+trunk, fuel, and ammo slots.
+
+Spidertrons return home for refueling when at least one requested item is
+depleted in trunk, fuel, and ammo slots together.
+
+If a roboport is present, it will be turned off before attacking and turned on
+again after the spidertron retreated. This is done to save the construction bots.
+If the construction bots repair a spider on the way home, and it still has ammo
+and fuel, it will pick up the nearest target as usual.
 
 ## Settings
 

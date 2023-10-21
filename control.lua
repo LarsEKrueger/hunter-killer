@@ -440,12 +440,48 @@ local function vehicle_wants_home(vehicle, min_health)
     end
     -- Ignore auto-trash items
     if (log_req.max > 0) and ((ammo_count + trunk_count + fuel_count) == 0) then
-      game.print( serpent.line{ n=log_req.name, a=ammo_count, t=trunk_count, f=fuel_count})
       return true
     end
     slot = slot + 1
   end
   return false
+end
+
+-- Helper function to switch out equipment in the grid.
+-- Taken from Constructron-Continued (MIT license).
+---@param grid LuaEquipmentGrid
+---@param old_eq LuaEquipment
+---@param new_eq string
+local function replace_roboports(grid, old_eq, new_eq)
+    local grid_pos = old_eq.position
+    local eq_energy = old_eq.energy
+    grid.take{ position = old_eq.position }
+    local new_set = grid.put{ name = new_eq, position = grid_pos }
+    if new_set then
+        new_set.energy = eq_energy
+    end
+end
+
+-- Disable roboports by replacing them with versions that have 0 range
+-- Adapted from Constructron-Continued (MIT license).
+local function disable_roboports(vehicle)
+  for _, eq in next, vehicle.grid.equipment do
+    if eq.type == "roboport-equipment" then
+      if not string.find(eq.name, "%-hk-disabled") then
+        replace_roboports(vehicle.grid, eq, (eq.prototype.take_result.name .. "-hk-disabled"))
+      end
+    end
+  end
+end
+
+-- Enable roboports by replacing them with versions that have normal range
+-- Adapted from Constructron-Continued (MIT license).
+local function enable_roboports(vehicle)
+  for _, eq in next, vehicle.grid.equipment do
+    if eq.type == "roboport-equipment" then
+      replace_roboports(vehicle.grid, eq, eq.prototype.take_result.name)
+    end
+  end
 end
 
 -- State transition checker for killer spidertrons in idle state
@@ -497,6 +533,7 @@ local function trans_killer_approach( killer)
     killer.safe_path = killer.vehicle.autopilot_destinations
     killer.state = kState_attack
     killer.taptap_ctr = nil
+    disable_roboports(killer.vehicle)
   elseif idle then
     killer.vehicle.autopilot_destination = nil
     killer.state = kState_idle
@@ -543,6 +580,7 @@ local function trans_killer_retreat( killer)
   killer.vehicle.color = {0.0, 1.0, 1.0, 1.0}
   if not have_autopilot(killer.vehicle) then
     killer.state = kState_idle
+    enable_roboports(killer.vehicle)
   end
 end
 
@@ -550,7 +588,11 @@ end
 local function trans_killer_go_home( killer)
   -- blue
   killer.vehicle.color = {0.0, 0.0, 1.0, 1.0}
-  if not have_autopilot(killer.vehicle) then
+
+  -- If vehicle doesn't want to go home anymore, go idle
+  if not vehicle_wants_home(killer.vehicle, 1.0) then
+    killer.state = kState_idle
+  elseif not have_autopilot(killer.vehicle) then
      killer.state = kState_reArm
   end
 end
@@ -592,7 +634,6 @@ local function trans_killer_re_arm( killer)
         fuel_count = fuel_inv.get_item_count(log_req.name)
       end
       if (ammo_count + trunk_count + fuel_count) < log_req.min then
-        game.print( serpent.line{ n=log_req.name, a=ammo_count, t=trunk_count, f=fuel_count, m=log_req.min})
         rearmed = false
         break
       end
