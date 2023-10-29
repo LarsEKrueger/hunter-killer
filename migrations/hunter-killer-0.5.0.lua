@@ -1,7 +1,7 @@
 --[[
-migrations\hunter-killer-0.2.2.lua -- Migration script
+migrations\hunter-killer-0.5.0.lua -- Migration script
 
-Copyright 2023 Lars Krueger
+Copyright 2024 Lars Krueger
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the “Software”), to deal in
@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --]]
-local reporters = require('reporters')
-reporters.ensure_globals()
-game.print( 'Hunter-Killer: v0.2.2 migration complete')
+local targets = require 'targets'
+
+targets.ensure_globals()
+game.print( 'Hunter-Killer: v0.5.0 migration complete')

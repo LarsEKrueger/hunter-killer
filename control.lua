@@ -1,14 +1,37 @@
 --[[
-  control.lua: Event handling script for the factorio mod *HunterKiller*.
+control.lua: Event handling script for the factorio mod *HunterKiller*.
 
-  Uses the priority queue class from https://github.com/iskolbin/lpriorityqueue
+Uses rstar from https://github.com/rick4stley/rstar/ as the r-tree
+implementation for storing the target positions. MIT License
+
+Copyright 2023 Lars Krueger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the “Software”), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ]]
 
-local PriorityQueue = require 'PriorityQueue'
 local StatisticsReporter = require 'StatisticsReporter'
 local reporters = require 'reporters'
+local targets = require 'targets'
 local collision_mask_util = require 'collision-mask-util'
 local util = require 'util'
+local rstar = require 'rstar/rstar'
+local aabb = require 'rstar/aabb'
 
 -- Count and print number of killers
 local function count_killers(vehicles, suffix)
@@ -60,7 +83,6 @@ end
 -- Vehicle ids will be used as keys. The vehicle state and a link to the
 -- vehicle object will be used as the value in the table.
 local function detect_vehicles()
-
   -- Get the vehicle list or start from scratch
   local old_vehicles = global.vehicles or {}
   local new_vehicles = {}
@@ -123,50 +145,34 @@ local function dist_between_pos(p1,p2)
   return math.sqrt( dx*dx + dy*dy)
 end
 
--- Block List ===================================================
-local function block_code_from_pos( pos)
-  local block_res = 16.0
-  local x = math.floor(pos.x / block_res + 0.5)
-  local y = math.floor(pos.y / block_res + 0.5)
-  return x .. ':' .. y
-end
-
--- Check if a given position is in the block list
-local function is_target_blocked(pos)
-  local block_list = global.target_blockers or {}
-  local bc = block_code_from_pos(pos)
-  if block_list[bc] then
-    return true
-  end
-  return false
-end
-
--- Add a point to the block list
-local function block_target(pos)
-  local block_list = global.target_blockers or {}
-  local bc = block_code_from_pos(pos)
-  block_list[bc] = pos
-  global.target_blockers = block_list
-end
-
 -- Find targets ================================================
 
--- Get the list of target that are not blocked. Return true if target were checked
+-- Return a bbox object from the given target
+local function box_from_target(target)
+  -- As boxes start at x,y and extend to x+w,y+h, shift x and y by half the
+  -- width to center on the target
+  local box = aabb.new( target.position.x-0.5, target.position.y-0.5)
+  -- Add target as payload to the box
+  box.target = target
+  return box
+end
+
+-- Get the list of targets. Return true if targets were checked
 local function find_valid_targets()
   local nauvis = game.surfaces['nauvis']
-  if (not global.enemy_list) and (not global.targets or (#global.targets == 0)) then
+  if (not global.enemy_list) and global.target_tree:isEmpty() then
     local targets = nauvis.find_entities_filtered{
       force='enemy',
       is_military_target=true,
-      type={'turret', 'spawner'},
+      type={'turret', 'spawner', 'unit-spawner'},
     }
     global.enemy_list = targets
     if #targets > 0 then
       global.report_targets:set(#targets)
     end
+    global.targets_count = 0
   end
   local some_checked = false
-  local valid_targets = global.targets or {}
   if global.enemy_list then
     local enemies_to_check = settings.global['hunter-killer-enemies-per-cycle'].value
     local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
@@ -179,30 +185,29 @@ local function find_valid_targets()
       table.remove(global.enemy_list,idx)
       some_checked = true
       if tgt.valid then
-        if not is_target_blocked(tgt.position) then
-          local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
-          local is_polluted = false
-          for dx = -chunk_rad,chunk_rad do
-            if is_polluted then
+        local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
+        local is_polluted = false
+        for dx = -chunk_rad,chunk_rad do
+          if is_polluted then
+            break
+          end
+          for dy = -chunk_rad,chunk_rad do
+            if force.is_chunk_charted('nauvis', {tgt_chunk_pos.x+dx,tgt_chunk_pos.y+dy}) and
+              (nauvis.get_pollution({tgt.position.x+32.0*dx,tgt.position.y+32.0*dy}) > 0.0) then
+              is_polluted = true
               break
             end
-            for dy = -chunk_rad,chunk_rad do
-              if force.is_chunk_charted('nauvis', {tgt_chunk_pos.x+dx,tgt_chunk_pos.y+dy}) and
-                (nauvis.get_pollution({tgt.position.x+32.0*dx,tgt.position.y+32.0*dy}) > 0.0) then
-                is_polluted = true
-                break
-              end
-            end
           end
-          if is_polluted then
-            valid_targets[#valid_targets+1] = tgt
-          end
+        end
+        if is_polluted then
+          local box = box_from_target( tgt)
+          global.target_tree:insert(box)
+          global.targets_count = (global.targets_count or 0) + 1
         end
       end
       checked = checked + 1
     end
   end
-  global.targets = valid_targets
   return some_checked
 end
 
@@ -214,14 +219,12 @@ local function interesting_for_exploration( chunk, chunk_rad)
   local polluted = 0
   if chunk and force.is_chunk_charted('nauvis', {chunk.x,chunk.y}) then
     local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
-    if not is_target_blocked(map_pos) then
-      for dx = -chunk_rad,chunk_rad do
-        for dy = -chunk_rad,chunk_rad do
-          if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
-            uncharted = uncharted + 1
-          elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
-            polluted = polluted + 1
-          end
+    for dx = -chunk_rad,chunk_rad do
+      for dy = -chunk_rad,chunk_rad do
+        if not force.is_chunk_charted('nauvis', {chunk.x+dx,chunk.y+dy}) then
+          uncharted = uncharted + 1
+        elseif nauvis.get_pollution({map_pos.x+32.0*dx,map_pos.y+32.0*dy}) > 0.0 then
+          polluted = polluted + 1
         end
       end
     end
@@ -236,19 +239,20 @@ end
 local function find_chunks_to_explore()
   local force = game.forces['player']
   local nauvis = game.surfaces['nauvis']
-  if not global.chunk_iterator and (not global.targets or (#global.targets == 0)) then
+  if not global.chunk_iterator and global.target_tree:isEmpty() then
     global.chunk_iterator = nauvis.get_chunks()
+    global.place_count = 0
   end
 
-  local valid_targets = global.targets or {}
   if global.chunk_iterator then
     local chunks_to_check = settings.global['hunter-killer-chunks-per-cycle'].value
     local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
     local checked = 0
+    local added = false
     while (checked < chunks_to_check) do
       local chunk = global.chunk_iterator()
       if not chunk then
-        global.report_places:set( #valid_targets)
+        global.report_places:set( global.place_count)
         global.chunk_iterator = nil
         global.enemy_list = nil
         break
@@ -256,18 +260,20 @@ local function find_chunks_to_explore()
       local map_pos = interesting_for_exploration(chunk, chunk_rad)
       if map_pos then
         -- Add a fake target and mark it as an exploration target
-        valid_targets[#valid_targets+1] = {
+        global.target_tree:insert( box_from_target(
+        {
           position = map_pos,
           valid = true,
           health = 1.0,
           type = 'exploration',
           chunk = chunk,
-        }
+        }))
+        global.place_count = global.place_count + 1
+        added = true
       end
       checked = checked + 1
     end
   end
-  global.targets = valid_targets
 end
 
 -- planner ==================================================
@@ -280,9 +286,11 @@ local kState_attack     = 4
 local kState_retreat    = 5
 local kState_goHome     = 6
 local kState_reArm      = 7
+local kState_leader     = 8
+local kState_follower   = 9
 
 -- Plan a path from target to current position.
-local function plan_path( killer, target, ok_state, fail_state, info)
+local function plan_path( killer, target, ok_state, fail_state, info, req_info)
   -- Center of the circle we're walking while waiting for the planner to finish
   if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 33.0 then
     killer.taptap_ctr = killer.vehicle.position
@@ -313,12 +321,17 @@ local function plan_path( killer, target, ok_state, fail_state, info)
     -- Don't need to get too close
     radius = pf_rad,
     pathfinding_flags = {
-      cache = false,
+      cache = true,
       low_priority = false,
     },
     path_resolution_modifier = -3,
     killer = killer,
   }
+  if req_info then
+    for k,v in pairs(req_info) do
+      request[k] = v
+    end
+  end
 
   local nauvis = game.surfaces['nauvis']
 
@@ -347,17 +360,19 @@ local function path_planner_finished(event)
     if request then
       if event.path then
         if request.killer.vehicle.valid then
-          request.killer.vehicle.autopilot_destination = nil
-          for _,p in ipairs(event.path) do
-            request.killer.vehicle.add_autopilot_destination( p.position)
+          if request.store_path then
+            request.killer.target_path = event.path
+          else
+            request.killer.vehicle.autopilot_destination = nil
+            for _,p in ipairs(event.path) do
+              request.killer.vehicle.add_autopilot_destination( p.position)
+            end
           end
         end
         request.killer.state = request.killer.ok_state
-      else
-        if not event.try_again_later then
-          block_target(request.goal)
-          request.killer.state = request.killer.fail_state
-        end
+        request.killer.dont_tap = nil
+      elseif not event.try_again_later then
+        request.killer.state = request.killer.fail_state
       end
       if request.killer.request_id then
         global.pathfinder_requests[request.killer.request_id] = nil
@@ -485,7 +500,7 @@ local function enable_roboports(vehicle)
 end
 
 -- State transition checker for killer spidertrons in idle state
-local function trans_killer_idle( killer, valid_targets)
+local function trans_killer_idle( killer)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
   if vehicle_wants_home(killer.vehicle, get_min_health()) then
@@ -592,6 +607,7 @@ local function trans_killer_go_home( killer)
   -- If vehicle doesn't want to go home anymore, go idle
   if not vehicle_wants_home(killer.vehicle, 1.0) then
     killer.state = kState_idle
+    killer.autopilot_destination = nil
   elseif not have_autopilot(killer.vehicle) then
      killer.state = kState_reArm
   end
@@ -655,45 +671,52 @@ local function trans_killer_planning( killer)
   local taptap_steps = 16
   local nauvis = game.surfaces['nauvis']
   local another_round = false
-  if killer.taptap_ctr and (#killer.vehicle.autopilot_destinations < taptap_steps/2) then
-    if #killer.vehicle.autopilot_destinations == 1 then
-      killer.state = kState_walking
-      if killer.request_id then
-        global.pathfinder_requests = global.pathfinder_requests or {}
-        global.pathfinder_requests[killer.request_id] = nil
-        killer.request_id = nil
-        killer.pathfinder_request = nil
+  if not killer.dont_tap then
+    if killer.taptap_ctr and (#killer.vehicle.autopilot_destinations < taptap_steps/2) then
+      if #killer.vehicle.autopilot_destinations == 1 then
+        killer.state = kState_walking
+        if killer.request_id then
+          global.pathfinder_requests = global.pathfinder_requests or {}
+          global.pathfinder_requests[killer.request_id] = nil
+          killer.request_id = nil
+          killer.pathfinder_request = nil
+        end
+        killer.ok_state = kState_idle
+        return
       end
-      killer.ok_state = kState_idle
-      return
-    end
-    -- Add another revolution
-    for i = 0, (taptap_steps-1) do
-      local angle = 2.0*math.pi*i/taptap_steps
-      local x=killer.taptap_ctr.x + math.sin(angle)*taptap_radius
-      local y=killer.taptap_ctr.y + math.cos(angle)*taptap_radius
+      -- Add another revolution
+      for i = 0, (taptap_steps-1) do
+        local angle = 2.0*math.pi*i/taptap_steps
+        local x=killer.taptap_ctr.x + math.sin(angle)*taptap_radius
+        local y=killer.taptap_ctr.y + math.cos(angle)*taptap_radius
 
-      local tile = nauvis.get_tile(x,y)
-      if tile and tile.valid and (tile.name ~= 'water') and (tile.name ~= 'deepwater') then
-        killer.vehicle.add_autopilot_destination( { x=x, y=y})
+        local tile = nauvis.get_tile(x,y)
+        if tile and tile.valid and (tile.name ~= 'water') and (tile.name ~= 'deepwater') then
+          killer.vehicle.add_autopilot_destination( { x=x, y=y})
+        end
       end
+      another_round = true
     end
-    another_round = true
+  else
+    return
   end
 
   -- Check the request needs to be tried again
   if another_round and killer.request_id and global.pathfinder_requests and not global.pathfinder_requests[killer.request_id] then
+
     local request = killer.pathfinder_request
     if request then
       local request_id = nauvis.request_path(request)
       global.pathfinder_requests[request_id] = request
       killer.request_id = request_id
     else
+      killer.vehicle.autopilot_destination = nil
       killer.state = kState_idle
     end
   end
 
   if not killer.request_id then
+    killer.vehicle.autopilot_destination = nil
     killer.state = kState_idle
   end
 
@@ -717,8 +740,103 @@ end
 local function trans_killer_walking( killer)
   -- Grey
   killer.vehicle.color = {0.5, 0.5, 0.5, 1.0}
+  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+    vehicle_go_home(killer)
+    return
+  end
   if not have_autopilot( killer.vehicle) then
-    killer.state = killer.ok_state
+    -- Reached the target, either set manually or automatically
+    killer.state = kState_idle
+    killer.vehicle.autopilot_destination = nil
+    killer.group_leader = nil
+    killer.target = nil
+  else
+    local pf_rad = settings.global['hunter-killer-pf-radius'].value
+    if not killer.group_leader or
+      not killer.group_leader.vehicle or
+      not killer.target or
+      (killer.group_leader.state ~= kState_leader)
+      then
+      -- If there is an assembly target and it moved away from the assembly
+      -- position, go to idle to look for the next target.
+      killer.state = kState_idle
+      killer.vehicle.autopilot_destination = nil
+      killer.group_leader = nil
+      killer.target = nil
+    end
+  end
+end
+
+-- State transition checker for assembling killers in leader state.
+local function trans_killer_leader( killer)
+  -- Dark red
+  killer.vehicle.color = {0.6, 0.1, 0.1, 1.0}
+  local go_home = false
+  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+    go_home = true
+  end
+  local pf_rad = settings.global['hunter-killer-pf-radius'].value
+
+  -- Check if enemy building is dead or chunk has been explored
+  if killer.target and killer.target.valid then
+    if killer.target.type == 'exploration' then
+      local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
+      if not interesting_for_exploration(killer.target.chunk, chunk_rad) then
+        killer.state = kState_idle
+      end
+    end
+  else
+    killer.state = kState_idle
+  end
+  -- Check if killer has been moved manually
+  if ( not have_autopilot(killer.vehicle) and
+    killer.assembly_point and
+    (dist_between_pos(killer.assembly_point,killer.vehicle.position) > pf_rad)
+    ) then
+    killer.state = kState_idle
+  end
+
+  if go_home or (killer.state == kState_idle) then
+    killer.target_path = nil
+    killer.target = nil
+    killer.vehicle.autopilot_destination = nil
+    killer.dont_tap = nil
+    killer.assembly_point = nil
+  end
+  if go_home then
+    vehicle_go_home(killer)
+    return
+  end
+end
+
+-- State transition checker for assembling killers in leader state.
+local function trans_killer_follower( killer)
+  -- Dark green
+  killer.vehicle.color = {0.1, 0.6, 0.1, 1.0}
+  local go_home = false
+  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+    go_home = true
+  end
+  local pf_rad = settings.global['hunter-killer-pf-radius'].value
+  if not killer.target or not killer.target.valid or
+    not killer.group_leader or not killer.group_leader.vehicle.valid or
+    not killer.group_leader.assembly_point or
+    (killer.group_leader.state ~= kState_leader) or
+    ( not have_autopilot(killer.vehicle) and
+      (dist_between_pos(killer.group_leader.assembly_point,killer.vehicle.position) > pf_rad)
+    ) then
+    killer.state = kState_idle
+  end
+
+  if go_home or (killer.state == kState_idle) then
+    killer.group_leader = nil
+    killer.target = nil
+    killer.vehicle.autopilot_destination = nil
+    killer.dont_tap = nil
+  end
+  if go_home then
+    vehicle_go_home(killer)
+    return
   end
 end
 
@@ -730,163 +848,232 @@ local state_dispatch = {
  [kState_goHome] = trans_killer_go_home,
  [kState_reArm] = trans_killer_re_arm,
  [kState_planning] = trans_killer_planning,
- [kState_walking] = trans_killer_walking
+ [kState_walking] = trans_killer_walking,
+ [kState_leader] = trans_killer_leader,
+ [kState_follower] = trans_killer_follower,
 }
 
--- Take the first target and find the closest idle spider
-local function send_closest_spider()
-  local min_health = get_min_health()
-  local force = game.forces['player']
-  if (not force.is_pathfinder_busy()) and global.targets then
-    if #global.targets > 0 then
-      local idx = 1
-      if global.targets[idx].valid then
-        local tgt_pos = global.targets[idx].position
-        if not is_target_blocked(tgt_pos) then
-          local killers = global.vehicles or {}
-          local closest_d = nil
-          local closest_killer = nil
-          for id,killer in pairs(killers) do
-            if killer.vehicle and killer.vehicle.valid then
-              if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle, min_health) then
-                local d = dist_between_pos( tgt_pos, killer.vehicle.position)
-                if ((not closest_d) or (d < closest_d)) and (not is_target_blocked(tgt_pos)) then
-                  closest_d = d
-                  closest_killer = killer
-                end
-              end
-            end
-          end
-          if not closest_killer then
-            return
-          end
-          plan_path( closest_killer, tgt_pos, kState_approach, kState_idle, { target = global.targets[idx] })
-        end
-      end
-      table.remove(global.targets,idx)
-    else
-      -- No more targets, clear the block list
-      global.target_blockers = {}
-    end
-  end
+-- Sorting criterion for killers
+local function comp_dist(kd1,kd2)
+  return kd1.d < kd2.d
 end
 
--- Check each idle spider if it can take the target of an approaching spider
-local function steal_target()
-  local force = game.forces['player']
-  local stole = false
-  if not force.is_pathfinder_busy() then
-    local killers = global.vehicles or {}
-    -- Loop over all potential thiefs
-    local min_health = get_min_health()
-    for id_i,killer_i in pairs(killers) do
-      if killer_i.vehicle and killer_i.vehicle.valid and
-        not vehicle_wants_home(killer_i.vehicle, min_health) then
-        if (killer_i.state == kState_idle) then
-          -- Loop over all potential victims, find out if killer_i is closer and steal target
-          local closest_d = nil
-          local closest_killer = nil
-          for id_j,killer_j in pairs(killers) do
-            if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
-              ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
-              not vehicle_wants_home(killer_j.vehicle, min_health) then
-              local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
-              local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
-              if (d_ij < d_jj) and  ((not closest_d) or (d_ij < closest_d)) then
-                closest_d = d_ij
-                closest_killer = killer_j
-              end
-            end
-          end
-          if closest_killer then
-            global.pathfinder_requests = global.pathfinder_requests or {}
-            if closest_killer.request_id then
-              global.pathfinder_requests[closest_killer.request_id] = nil
-              closest_killer.request_id = nil
-            end
-            closest_killer.state = kState_idle
-            closest_killer.vehicle.autopilot_destination = nil
-            plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
-            stole = true
-          end
-        elseif ((killer_i.state == kState_planning) and (killer_i.ok_state == kState_approach)) or
-          (killer_i.state == kState_approach) then
-          -- Loop over all potential victims, find out if switching targets gives an smaller total sum of distance
-          local closest_d = nil
-          local closest_killer = nil
-          for id_j,killer_j in pairs(killers) do
-            if (id_j ~= id_i) and killer_j.vehicle and killer_j.vehicle.valid and
-              ((killer_j.state == kState_approach) or (killer_j.state == kState_planning)) and
-              not vehicle_wants_home(killer_j.vehicle, min_health) then
-              local d_ij = dist_between_pos(killer_i.vehicle.position,killer_j.target_pos)
-              local d_jj = dist_between_pos(killer_j.vehicle.position,killer_j.target_pos)
-              local d_ji = dist_between_pos(killer_j.vehicle.position,killer_i.target_pos)
-              local d_ii = dist_between_pos(killer_i.vehicle.position,killer_i.target_pos)
-              local d_switch = d_ji + d_ij
-              local d_keep = d_ii + d_jj
-              if ((not closest_d) or (d_switch < closest_d)) and
-                (d_switch < d_keep) and -- Switching reduces overall distance
-                (math.abs(d_switch - d_keep) > 200) then
-                closest_d = d_i
-                closest_killer = killer_j
-              end
-            end
-          end
-          if closest_killer then
-            global.pathfinder_requests = global.pathfinder_requests or {}
-            if killer_i.request_id then
-              global.pathfinder_requests[killer_i.request_id] = nil
-              killer_i.request_id = nil
-            end
-            killer_i.state = kState_idle
-            killer_i.vehicle.autopilot_destination = nil
-            if closest_killer.request_id then
-              global.pathfinder_requests[closest_killer.request_id] = nil
-              closest_killer.request_id = nil
-            end
-            closest_killer.state = kState_idle
-            closest_killer.vehicle.autopilot_destination = nil
-            local target_i = killer_i.target
-            local tgt_pos_i = killer_i.target_pos
-            plan_path( killer_i, closest_killer.target_pos, kState_approach, kState_idle, { target = closest_killer.target })
-            plan_path( closest_killer, tgt_pos_i, kState_approach, kState_idle, { target = target_i })
-            stole = true
-          end
-        end
-      end
-    end -- for killer_i
-  end
-  return stole
-end
-
--- Find the first idle killer and send it to the closest target
+-- If there are group_size idle killers, find the one with the closest distance
+-- to any target and send all killers there
+--
+-- The most common case is waiting for the last spider to arrive. This happens
+-- when you have a large base with many spiders and long ways to go.
 local function send_killer_to_target()
   local force = game.forces['player']
   if not force.is_pathfinder_busy() then
-    global.targets = global.targets or {}
     local killers = global.vehicles or {}
     local min_health = get_min_health()
+    local group_size = settings.global['hunter-killer-attack-group-size'].value
+    local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
+    -- Count the idle killers and the leaders.
+    local idle_killers = 0
+    local leading_killers = 0
+    local total_killers = 0
+    local complete_group = false
+    -- Index by unit_number of group leader
+    local group_map = {}
     for id,killer in pairs(killers) do
-      if killer.vehicle and killer.vehicle.valid then
-        if (killer.state == kState_idle) and not vehicle_wants_home(killer.vehicle, min_health) then
+      total_killers = total_killers + 1
+      if killer.vehicle and
+        killer.vehicle.valid and
+        not vehicle_wants_home(killer.vehicle, min_health) then
+        if (killer.state == kState_idle) and (not have_autopilot( killer.vehicle))  then
+          idle_killers = idle_killers + 1
+        elseif (killer.state == kState_leader) then
+          if killer.target and killer.target.valid then
+            -- If killer has a path to the target, but no assembly point, send them on their way.
+            if killer.target_path and not killer.assembly_point then
+              killer.vehicle.autopilot_destination = nil
+              if #killer.target_path == 0 then
+                killer.target = nil
+                killer.target_path = nil
+                killer.state = kState_idle
+                idle_killers = idle_killers + 1
+              else
+                killer.assembly_point = killer.vehicle.position
+                while #killer.target_path > 1 do
+                  local d = dist_between_pos(killer.target_path[1].position, killer.target.position)
+                  if d < assemble_dist then
+                    break
+                  end
+                  killer.vehicle.add_autopilot_destination(killer.target_path[1].position)
+                  killer.assembly_point = killer.target_path[1].position
+                  table.remove(killer.target_path,1)
+                end
+              end
+            end
+            -- Create an entry in the group map if it doesn't exist.
+            if not group_map[killer.vehicle.unit_number] then
+              group_map[killer.vehicle.unit_number] = { followers = {} }
+            end
+            group_map[killer.vehicle.unit_number].leader = killer
+          else
+            killer.target = nil
+            killer.target_path = nil
+            killer.state = kState_idle
+            idle_killers = idle_killers + 1
+            killer.vehicle.autopilot_destination = nil
+          end
+          -- If state is still leader, count it
+          if (killer.state == kState_leader) then
+            leading_killers = leading_killers + 1
+          end
+        elseif killer.state == kState_follower then
+          if killer.group_leader and killer.group_leader.vehicle.valid and killer.vehicle.valid then
+            local leader_number = killer.group_leader.vehicle.unit_number
+            -- Create an entry in the group map if it doesn't exist.
+            if not group_map[leader_number] then
+              group_map[leader_number] = { leader = nil, followers = { } }
+            end
+            group_map[leader_number].followers[#group_map[leader_number].followers + 1] = killer
+            if (#group_map[leader_number].followers + 1) >= group_size then
+              complete_group = true
+            end
+          end
+        end
+      end
+    end
+    local max_groups = math.floor(total_killers/group_size)
+
+    -- If there are complete groups, send all of them. This doesn't cost much
+    -- runtime as the paths are already computed.
+    if complete_group then
+      local group_sent = false
+      for _,group in pairs(group_map) do
+        -- Leader and group_size - 1 follower need to be present 
+        if group.leader and ((#group.followers + 1) >= group_size) then
+          -- Leader and all followers must have stopped
+          if not have_autopilot(group.leader.vehicle) then
+            local follower_stopped = true
+            for _,follower in ipairs(group.followers) do
+              if have_autopilot(follower.vehicle) then
+                follower_stopped = false
+                break
+              end
+            end
+            if follower_stopped then
+              group_sent = true
+              -- Send them off
+              group.followers[#group.followers+1] = group.leader
+
+              local target = group.leader.target
+              group.leader.target = nil
+              for _,follower in ipairs(group.followers) do
+                follower.target_pos = target.position
+                follower.target = target
+                follower.state = kState_approach
+                follower.ok_state = nil
+                follower.fail_state = nil
+                follower.vehicle.autopilot_destination = nil
+                follower.assembly_point = nil
+                follower.group_leader = nil
+                for _,p in ipairs(group.leader.target_path) do
+                  follower.vehicle.add_autopilot_destination( p.position)
+                end
+              end
+              group.leader.target_path = nil
+            end
+          end
+        end
+      end
+      if group_sent then
+        return
+      end
+    end
+
+    -- We have only incomplete groups. Go through all idle killers and try to make one leader or follower.
+    if (idle_killers > 0) then
+      local pf_rad = settings.global['hunter-killer-pf-radius'].value
+      for _,killer in pairs(killers) do
+        if killer.vehicle and
+          killer.vehicle.valid and
+          not vehicle_wants_home(killer.vehicle, min_health) and
+          not have_autopilot( killer.vehicle) and
+          (killer.state == kState_idle) then
+          -- Candidate for assignment, find the closest of either leaders or target
           local closest_d = nil
-          local closest_tgt = nil
-          local closest_i = nil
-          for i,tgt in ipairs(global.targets) do
-            if (not tgt.valid) or is_target_blocked(tgt.position) then
-              table.remove(global.targets,i)
-            else
-              local d = dist_between_pos( tgt.position, killer.vehicle.position)
+          local closest_t = nil
+          local closest_is_target = false
+          if leading_killers < max_groups then
+            local tgt = global.target_tree:nearest(box_from_target(killer.vehicle))
+            if tgt and not tgt.box.target.valid then
+              global.target_tree:delete(tgt.id)
+              tgt = nil
+            end
+            if tgt then
+              closest_d = dist_between_pos( tgt.box.target.position, killer.vehicle.position)
+              closest_t = tgt
+              closest_is_target = true
+            end
+          end
+          for _,group in pairs(group_map) do
+            -- Leader needs to be present and know where it wants to go and group needs to incomplete
+            if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point then
+              local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
               if ((not closest_d) or (d < closest_d)) then
                 closest_d = d
-                closest_tgt = tgt
-                closest_i = i
+                closest_t = group.leader
+                closest_is_target = false
               end
             end
           end
-          if closest_i then
-            plan_path( killer, closest_tgt.position, kState_approach, kState_idle, { target = closest_tgt })
-            table.remove(global.targets,closest_i)
+          -- We can assign this killer
+          if closest_t then
+            killer.assembly_point = nil
+            killer.group_leader = nil
+            killer.ok_state = nil
+            killer.fail_state = nil
+            if closest_is_target then
+              -- Delete target and surrounding targets, make killer a leader
+              killer.target_path = nil
+              plan_path(
+                killer,
+                closest_t.box.target.position,
+                kState_leader,
+                kState_idle,
+                {
+                  target = closest_t.box.target,
+                  dont_tap = true
+                },
+                { store_path = true }
+              )
+              local in_range = {}
+              global.target_tree:range( {
+                x=closest_t.box.target.position.x,
+                y=closest_t.box.target.position.y,
+                r=pf_rad}, in_range)
+              for _,box in ipairs(in_range) do
+                global.target_tree:delete(box.id)
+              end
+              -- Original box needs to be deleted. There are cases where the
+              -- box is not inside its own range.
+              global.target_tree:delete(closest_t.id)
+            else
+              -- Send towards the assembly point of the group leader
+              plan_path(
+              killer,
+              closest_t.assembly_point,
+              kState_follower,
+              kState_idle,
+              {
+                group_leader = closest_t,
+                -- Make a copy of the current position to detect if the leader moved
+                target = {
+                  position = closest_t.assembly_point,
+                  valid = true,
+                  health = 1.0,
+                  type = 'exploration',
+                }
+              },
+              {})
+            end
+            -- Stop after first assignment to not overtax the planner and to
+            -- keep the counting simple.
             return
           end
         end
@@ -910,6 +1097,7 @@ local function spidertron_state_machine()
       else
         -- Magenta: Invalid/unknown state
         killer.vehicle.color = { 1.0, 0.0, 1.0, 1.0}
+        killer.vehicle.autopilot_destination = nil
         killer.state = kState_idle
       end
       killer.last_state = current_state
@@ -923,18 +1111,19 @@ local function spidertron_state_machine()
   end
 end
 
-local function spidertron_reassign_targets()
-  steal_target()
-end
-
 local function spidertron_assign_targets()
-  send_closest_spider()
+  send_killer_to_target()
 end
 
 local function spidertron_find_targets()
   if not find_valid_targets() then
     find_chunks_to_explore()
   end
+end
+
+local function spidertron_rescan()
+  detect_vehicles()
+  detect_homebases()
 end
 
 -- Register events: vehicle list may have changed
@@ -951,9 +1140,6 @@ script.on_event(defines.events.on_chart_tag_removed, detect_homebases)
 -- Register event: Start path search to the targets
 script.on_nth_tick(settings.startup['hunter-killer-freq-assign'].value, spidertron_assign_targets)
 
--- Register event: Sort targets by distance
-script.on_nth_tick(settings.startup['hunter-killer-freq-reassign'].value, spidertron_reassign_targets)
-
 -- Register event: Process the target list 5x per second
 script.on_nth_tick(settings.startup['hunter-killer-freq-targets'].value, spidertron_find_targets)
 
@@ -964,10 +1150,16 @@ script.on_nth_tick(settings.startup['hunter-killer-freq-state'].value, spidertro
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
 
 -- Register the metatables
-script.register_metatable( 'PriorityQueue', getmetatable(PriorityQueue))
-script.register_metatable( 'PriorityQueueMt', getmetatable(PriorityQueue.new()))
 script.register_metatable( 'StatisticsReporterMt', StatisticsReporter.metatable)
+script.register_metatable( 'rstarMt', rstar)
+script.register_metatable( 'rsnodeMt', rstar.rsnodeMt)
+script.register_metatable( 'aabbMt', aabb)
 
 -- Init globals
 script.on_init( reporters.ensure_globals)
 script.on_configuration_changed( reporters.ensure_globals)
+
+script.on_init( targets.ensure_globals)
+script.on_configuration_changed( targets.ensure_globals)
+
+script.on_configuration_changed( spidertron_rescan)

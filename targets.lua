@@ -1,7 +1,7 @@
 --[[
-migrations\hunter-killer-0.2.2.lua -- Migration script
+targets.lua -- Set up globals target_tree objects
 
-Copyright 2023 Lars Krueger
+Copyright 2024 Lars Krueger
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the “Software”), to deal in
@@ -21,6 +21,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --]]
-local reporters = require('reporters')
-reporters.ensure_globals()
-game.print( 'Hunter-Killer: v0.2.2 migration complete')
+local rstar = require 'rstar/rstar'
+
+local targets = {}
+
+function targets.ensure_globals()
+  global.target_tree = global.target_tree or rstar.new()
+end
+
+return targets

@@ -33,11 +33,17 @@ way to reach an enemy.
 - 0.2.4: Fix packager script
 - 0.3: Settings
 - 0.4: Different Loadouts
-    - [X] Support for spiders without rockets
-    - [X] Support for spiders with repair drones
-        - [X] Disable robotports during attack (Contructron)
-        - [X] Go to idle if vehicle doesn't want to go home in "go-home"
 - 0.5: Multiple killer groups
+  - [X] Parameter: Group size
+  - [X] Remove block list
+  - [X] Plan way from group leader to target before/during assembling.
+  - [X] R-tree for targets: https://github.com/rick4stley/rstar/
+  - [X] Delete all targets in a radius around an accepted one
+  - [X] Send leader and follower to last planned point outside attack range
+  - [ ] group size 1
+- 0.5.1: Group improvements
+  - [ ] Different group size for exploration target
+  - [ ] Pick closest killer, not first
 - 0.6: Hunter function
 
 ## How does the *Killer* operate?
@@ -61,6 +67,8 @@ The spawners, worms, and places to explore will be called *targets* in the follo
 | retreat   | Go back to the latest safe position.          | Cyan |
 | go-home   | Return to the nearest *Homebase*.             | Blue |
 | re-arm    | Wait to be rearmed and repaired.              | Green |
+| leader    | Wait for assembling an attack group.          | Dark Red |
+| follower  | Wait for assembling an attack group.          | Dark Green |
 
 The conditions to switch from one state to another are:
 
@@ -68,6 +76,8 @@ The conditions to switch from one state to another are:
 |------------|--------------------------------------------------|----------|
 | idle       | A target is close enough to a polluted chunk.    | planning/attack |
 | idle       | Health or ammo are low.                          | go-home |
+| idle       | Group attack: Go to assembly position.           | leader |
+| idle       | Group attack: Go to assembly position.           | follower |
 | approach   | The selected target is destroyed.                | idle |
 | approach   | Safe distance to target reached.                 | attack |
 | attack     | Target destroyed, low health, or low ammo.       | retreat |
@@ -80,12 +90,16 @@ The conditions to switch from one state to another are:
 | planning   | Finding a path to the target                     | attack/go-home |
 | planning   | Sent somewhere by remote.                        | walking |
 | walking    | Arrived at target.                               | idle |
+| leader     | Group is assembled.                              | approach |
+| follower   | Group is assembled.                              | approach |
+| leader     | Group is disbanded.                              | idle |
+| follower   | Group is disbanded.                              | idle |
 
 The planning takes time. Therefore, the spidertrons will walk in circles to
-evade spitter fire. Planning itself is done in the background, at a pace
-determined by the game engine. The computation is shared evenly between all
-spidertrons in *planning* state. Also, the planner can become distracted by
-pockets and peninsulas.
+evade spitter fire (except when assembling a group). Planning itself is done in
+the background, at a pace determined by the game engine. The computation is
+shared evenly between all spidertrons in *planning* state. Also, the planner
+can become distracted by pockets and peninsulas.
 
 If the target is destroyed during planning, the spidertron goes back to *idle*
 state. This is checked every few seconds (configurable, see settings below).
@@ -106,14 +120,14 @@ the edge of the pollution. This allows the *Killer*s to keep up with the
 growing cloud.
 
 When the scan for places to explore has been completed, the mod reports the
-number of enemies in the pollution and chucks at the edge of the pollution as
+number of chunks at the edge of the pollution as
 *places to visit*.
 
 Enemies and places are only reported if the number increased since the last
 scan. If you don't see a message, your *Killer*s keep up with the growth of the
-pollution and the enemy explansion.
+pollution and the enemy expansion.
 
-For all these four numbers, a history of the last 8 values is displayed. The
+For all these four numbers, a history of the last 8 (different) values is displayed. The
 bars are normalized to minimum and maximum. The numerical value of oldest value
 is displayed on the left, the newest value on the right. Thus a display of
 
@@ -139,6 +153,41 @@ If a roboport is present, it will be turned off before attacking and turned on
 again after the spidertron retreated. This is done to save the construction bots.
 If the construction bots repair a spider on the way home, and it still has ammo
 and fuel, it will pick up the nearest target as usual.
+
+## Attack Groups
+
+Beginning version 0.5, the mod supports attack groups. The size of the group is
+determined by the setting *Number of Killers to group for an attack*. The
+default value is two as it's dangerous out there and you should never go alone.
+
+If you send our your poor spidertrons alone, their behaviour will be almost the
+same as in version 0.4. You will see less time spent in the mod, usually. This
+might degrade your FPS less than before if you have a large base.
+
+After increasing the group size, the behaviour changes a bit. If a killer picks
+out a target, it will move into position at a distance to the target. This
+distance is configure by the setting *Distance to target when assembling before
+attack*, default 300 tiles. This first killer in a group becomes the leader and
+is shown in dark red.
+
+As soon a leader has been selected, killers will choose between picking a
+target (and becoming the leader of a new group) or joining an existing group.
+The chose the closer option. If they join a group, they become a follower and
+are drawn in dark green.
+
+The followers will go to the assembly spot close to the target. Once the whole
+group is there, it will attack as usual. At the moment, the approach phase of
+the attack begins (orange colour), the group is disbanded and the spidertrons
+act individually towards the same target. If one gets damaged, the other carry on.
+
+It also means that spidertrons walk at their own pace during attack. It's
+recommended to give all of the same number of exoskeletons and reactors.
+Otherwise the faster killer will be attacked first and you will lose a large
+part of the advantage of the group attack.
+
+You can change the size of the groups at any time. If you experience problems
+with drastic changes, send some killers a few steps aside with a spidertron
+remote. This will disband the group and the leader/follower ratio will stabilize.
 
 ## Settings
 
@@ -248,7 +297,9 @@ path finding in the middle of a nest.
 * Max: 99
 * Internal name: `hunter-killer-go-home-health`
 
-### Difference between spidertron path lengths to steal target
+### Difference between spidertron path lengths to steal target (before version 0.5)
+
+This setting is not used in version 0.5.
 
 Spidertrons gossip from time to time ("Number of ticks between stealing targets") about their targets. If two of them find
 out that switching their targets is significantly less distance for both of
@@ -292,7 +343,9 @@ planning.
 * Max: 1000000
 * Internal name: `hunter-killer-freq-assign`
 
-### Number of ticks between stealing targets
+### Number of ticks between stealing targets (before version 0.5)
+
+This setting is not used in version 0.5.
 
 One tick corresponds to one full update of the game state. If you see 60 UPS,
 60 ticks pass per second.
@@ -343,6 +396,32 @@ gets damaged.
 * Max: 1000000
 * Internal name: `hunter-killer-freq-state`
 
+### Distance to target when assembling before attack (new in version 0.5)
+
+When a spidertron group plans an attack, it tries to keep the distance to the
+target where the group assembles higher than the value of this setting. Higher
+values can lead to a larger spread of the killers during the attack.
+
+* Earliest visible effect: Next group assembly
+* Default: 300
+* Min: 1
+* Max: 1000000
+* Unit: Tiles
+* Internal name: `hunter-killer-assemble-distance`
+
+### Number of Killers to group for an attack (new in version 0.5)
+
+Number of spidertrons to attack together. Lower numbers allow to attack more
+targets at the same time (e.g. during rapid groth of the pollution cloud).
+Higher numbers increase the power of a single attack.
+
+* Earliest visible effect: Next group assembly
+* Default: 2
+* Min: 1
+* Max: 1000000
+* Unit: Spidertrons
+* Internal name: `hunter-killer-attack-group-size`
+
 ## Limitations and Recommended Mods
 
 Spidertrons, even those controlled by an "advanced" AI such as this mod, are not
@@ -380,3 +459,11 @@ Spidertrons will switch targets more frequently. The old cycle time was too
 high and felt sluggish. This can lead to a few bogus switches if a larger
 number of spidertrons is at the same place, e.g. a home base. However, the
 solution will stabilize more quickly to reduce the total amount of travel.
+
+## 0.5
+
+Spidertrons will look for the closest target and don't switch targets
+afterwards. The selection mechanism prefers older spidertrons over new ones.
+
+This may lead to increased wandering of the killers around the map, which can
+be compensated by more spidertrons.
