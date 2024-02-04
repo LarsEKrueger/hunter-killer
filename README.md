@@ -45,6 +45,7 @@ way to reach an enemy.
   - [X] Install rstar files
   - [X] Pick closest killer, not first
   - [X] Debug output
+  - [X] Filter out water chunks from exploration list
 - 0.5.2: Group improvements
   - [ ] Different group size for exploration target
 - 0.6: Hunter function

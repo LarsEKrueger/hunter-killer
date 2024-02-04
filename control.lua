@@ -259,17 +259,21 @@ local function find_chunks_to_explore()
       end
       local map_pos = interesting_for_exploration(chunk, chunk_rad)
       if map_pos then
-        -- Add a fake target and mark it as an exploration target
-        global.target_tree:insert( box_from_target(
-        {
-          position = map_pos,
-          valid = true,
-          health = 1.0,
-          type = 'exploration',
-          chunk = chunk,
-        }))
-        global.place_count = global.place_count + 1
-        added = true
+        -- Check if it's on water. Filters out most chunks in lakes really early.
+        local tile = nauvis.get_tile(map_pos)
+        if not tile or not tile.valid or (tile.name ~= 'water' and tile.name ~= 'deepwater') then
+          -- Add a fake target and mark it as an exploration target
+          global.target_tree:insert( box_from_target(
+          {
+            position = map_pos,
+            valid = true,
+            health = 1.0,
+            type = 'exploration',
+            chunk = chunk,
+          }))
+          global.place_count = global.place_count + 1
+          added = true
+        end
       end
       checked = checked + 1
     end
