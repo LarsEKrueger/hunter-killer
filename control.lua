@@ -506,6 +506,9 @@ local function trans_killer_idle( killer)
   if vehicle_wants_home(killer.vehicle, get_min_health()) then
     vehicle_go_home(killer)
   end
+  if have_autopilot(killer.vehicle) then
+    killer.cached_closest = nil
+  end
 end
 
 -- State transition checker for killer spidertrons in approach state
@@ -989,6 +992,10 @@ local function send_killer_to_target()
     -- We have only incomplete groups. Go through all idle killers and try to make one leader or follower.
     if (idle_killers > 0) then
       local pf_rad = settings.global['hunter-killer-pf-radius'].value
+      local closest_d = nil
+      local closest_t = nil
+      local closest_is_target = false
+      local closest_k = nil
       for _,killer in pairs(killers) do
         if killer.vehicle and
           killer.vehicle.valid and
@@ -996,19 +1003,26 @@ local function send_killer_to_target()
           not have_autopilot( killer.vehicle) and
           (killer.state == kState_idle) then
           -- Candidate for assignment, find the closest of either leaders or target
-          local closest_d = nil
-          local closest_t = nil
-          local closest_is_target = false
           if leading_killers < max_groups then
-            local tgt = global.target_tree:nearest(box_from_target(killer.vehicle))
+            local tgt = killer.cached_closest
+            if not tgt then
+              tgt = global.target_tree:nearest(box_from_target(killer.vehicle))
+              killer.cached_closest = tgt
+            end
             if tgt and not tgt.box.target.valid then
               global.target_tree:delete(tgt.id)
               tgt = nil
             end
             if tgt then
-              closest_d = dist_between_pos( tgt.box.target.position, killer.vehicle.position)
-              closest_t = tgt
-              closest_is_target = true
+              local d = dist_between_pos( tgt.box.target.position, killer.vehicle.position)
+              if ((not closest_d) or (d < closest_d)) then
+                closest_d = d
+                closest_t = tgt
+                closest_k = killer
+                closest_is_target = true
+              end
+            else
+              killer.cached_closest = nil
             end
           end
           for _,group in pairs(group_map) do
@@ -1018,64 +1032,64 @@ local function send_killer_to_target()
               if ((not closest_d) or (d < closest_d)) then
                 closest_d = d
                 closest_t = group.leader
+                closest_k = killer
                 closest_is_target = false
               end
             end
           end
-          -- We can assign this killer
-          if closest_t then
-            killer.assembly_point = nil
-            killer.group_leader = nil
-            killer.ok_state = nil
-            killer.fail_state = nil
-            if closest_is_target then
-              -- Delete target and surrounding targets, make killer a leader
-              killer.target_path = nil
-              plan_path(
-                killer,
-                closest_t.box.target.position,
-                kState_leader,
-                kState_idle,
-                {
-                  target = closest_t.box.target,
-                  dont_tap = true
-                },
-                { store_path = true }
-              )
-              local in_range = {}
-              global.target_tree:range( {
-                x=closest_t.box.target.position.x,
-                y=closest_t.box.target.position.y,
-                r=pf_rad}, in_range)
-              for _,box in ipairs(in_range) do
-                global.target_tree:delete(box.id)
-              end
-              -- Original box needs to be deleted. There are cases where the
-              -- box is not inside its own range.
-              global.target_tree:delete(closest_t.id)
-            else
-              -- Send towards the assembly point of the group leader
-              plan_path(
-              killer,
-              closest_t.assembly_point,
-              kState_follower,
-              kState_idle,
-              {
-                group_leader = closest_t,
-                -- Make a copy of the current position to detect if the leader moved
-                target = {
-                  position = closest_t.assembly_point,
-                  valid = true,
-                  health = 1.0,
-                  type = 'exploration',
-                }
-              },
-              {})
-            end
-            -- Stop after first assignment to not overtax the planner and to
-            -- keep the counting simple.
-            return
+        end
+      end
+      -- We can assign this killer
+      if closest_t then
+        closest_k.assembly_point = nil
+        closest_k.group_leader = nil
+        closest_k.ok_state = nil
+        closest_k.fail_state = nil
+        closest_k.cached_closest = nil
+        if closest_is_target then
+          -- Delete target and surrounding targets, make closest_k a leader
+          closest_k.target_path = nil
+          closest_k.dont_tap = nil
+          plan_path(
+            closest_k,
+            closest_t.box.target.position,
+            kState_leader,
+            kState_idle,
+            {
+              target = closest_t.box.target,
+            },
+            { store_path = true }
+            )
+          local in_range = {}
+          global.target_tree:range( {
+            x=closest_t.box.target.position.x,
+            y=closest_t.box.target.position.y,
+            r=pf_rad}, in_range)
+          for _,box in ipairs(in_range) do
+            global.target_tree:delete(box.id)
           end
+          -- Original box needs to be deleted. There are cases where the
+          -- box is not inside its own range.
+          global.target_tree:delete(closest_t.id)
+        else
+          -- Send towards the assembly point of the group leader
+          closest_k.dont_tap = nil
+          plan_path(
+            closest_k,
+            closest_t.assembly_point,
+            kState_follower,
+            kState_idle,
+            {
+              group_leader = closest_t,
+              -- Make a copy of the current position to detect if the leader moved
+              target = {
+                position = closest_t.assembly_point,
+                valid = true,
+                health = 1.0,
+                type = 'exploration',
+              }
+            },
+            {})
         end
       end
     end
@@ -1115,9 +1129,51 @@ local function spidertron_assign_targets()
   send_killer_to_target()
 end
 
-local function spidertron_find_targets()
+local function spidertron_find_targets(event)
   if not find_valid_targets() then
     find_chunks_to_explore()
+  end
+  if settings.global['hunter-killer-debug-print-targets'].value and global.target_tree then
+    local cnt=0
+    local traverse = { global.target_tree.root }
+    while #traverse > 0 do
+      local b = table.remove(traverse, 1)
+      if b.is_leaf then
+        if b.box.target and b.box.target.valid then
+          cnt=cnt+1
+        end
+        for i = 1, #b.children do
+          local c = b.children[i]
+          if c.box.target and c.box.target.valid then
+            cnt=cnt+1
+          end
+        end
+      else
+        for i = 1, #b.children do
+          table.insert( traverse, b.children[i])
+        end
+      end
+    end
+    -- Compute burndown rate
+    if not global.hunter_killer_last_cnt or not global.hunter_killer_last_cnt_tick or (event.tick <= global.hunter_killer_last_cnt_tick) or (cnt > global.hunter_killer_last_cnt) then
+      global.hunter_killer_last_cnt = cnt
+      global.hunter_killer_last_cnt_tick = event.tick
+      game.print( cnt .. ' places to visit')
+    else
+      local bd = global.hunter_killer_last_cnt - cnt
+      local dt = event.tick - global.hunter_killer_last_cnt_tick
+      -- Removed entries / minute
+      local bdr = 3600.0 * bd / dt
+      if not global.hunter_killer_bdr_avg then
+        global.hunter_killer_bdr_avg = bdr
+        game.print( cnt .. ' places to visit. ' .. bdr .. ' checks per minute')
+      else
+        global.hunter_killer_bdr_avg = 0.99 * global.hunter_killer_bdr_avg + 0.01 * bdr
+        game.print( cnt .. ' places to visit. ' .. global.hunter_killer_bdr_avg .. ' checks per minute on average')
+      end
+      global.hunter_killer_last_cnt = cnt
+      global.hunter_killer_last_cnt_tick = event.tick
+    end
   end
 end
 

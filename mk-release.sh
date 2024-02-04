@@ -69,7 +69,7 @@ git tag "v${version}"
 zipfolderbase="hunter-killer"
 zipfolder="../${zipfolderbase}"
 mkdir ${zipfolder}
-cp -r *.json README.md LICENSE *.lua migrations ${zipfolder}
+cp -r *.json README.md LICENSE *.lua migrations rstar ${zipfolder}
 pushd ..
 zip -r "hunter-killer-${version}.zip" "${zipfolderbase}"
 popd

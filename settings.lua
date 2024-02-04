@@ -152,5 +152,13 @@ data:extend({
     default_value = 2,
     minimum_value = 1,
     maximum_value = 1000000,
+  },
+  {
+    name = "hunter-killer-debug-print-targets",
+    localised_name = "Debug: Count and print the number of places checked per minute",
+    localised_description = "Can degrade performance",
+    type = "bool-setting",
+    setting_type = "runtime-global",
+    default_value = false,
   }
 })

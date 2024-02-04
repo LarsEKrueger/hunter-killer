@@ -40,10 +40,13 @@ way to reach an enemy.
   - [X] R-tree for targets: https://github.com/rick4stley/rstar/
   - [X] Delete all targets in a radius around an accepted one
   - [X] Send leader and follower to last planned point outside attack range
-  - [ ] group size 1
-- 0.5.1: Group improvements
+  - [X] group size 1
+- 0.5.1: Bug fixes
+  - [X] Install rstar files
+  - [X] Pick closest killer, not first
+  - [X] Debug output
+- 0.5.2: Group improvements
   - [ ] Different group size for exploration target
-  - [ ] Pick closest killer, not first
 - 0.6: Hunter function
 
 ## How does the *Killer* operate?
@@ -463,7 +466,7 @@ solution will stabilize more quickly to reduce the total amount of travel.
 ## 0.5
 
 Spidertrons will look for the closest target and don't switch targets
-afterwards. The selection mechanism prefers older spidertrons over new ones.
+afterwards.
 
 This may lead to increased wandering of the killers around the map, which can
 be compensated by more spidertrons.
