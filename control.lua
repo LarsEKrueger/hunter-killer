@@ -1215,11 +1215,13 @@ script.register_metatable( 'rstarMt', rstar)
 script.register_metatable( 'rsnodeMt', rstar.rsnodeMt)
 script.register_metatable( 'aabbMt', aabb)
 
--- Init globals
-script.on_init( reporters.ensure_globals)
-script.on_configuration_changed( reporters.ensure_globals)
+local function ensure_globals()
+  reporters.ensure_globals()
+  targets.ensure_globals()
+end
 
-script.on_init( targets.ensure_globals)
-script.on_configuration_changed( targets.ensure_globals)
+-- Init globals
+script.on_init( ensure_globals)
+script.on_configuration_changed( ensure_globals)
 
 script.on_configuration_changed( spidertron_rescan)
