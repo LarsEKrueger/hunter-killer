@@ -46,7 +46,9 @@ way to reach an enemy.
   - [X] Pick closest killer, not first
   - [X] Debug output
   - [X] Filter out water chunks from exploration list
-- 0.5.2: Group improvements
+- 0.5.2: Bug fix
+  - [X] Error on starting new game
+- 0.5.3: Group improvements
   - [ ] Different group size for exploration target
 - 0.6: Hunter function
 
