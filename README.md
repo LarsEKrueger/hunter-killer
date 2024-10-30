@@ -22,6 +22,10 @@ Be aware that this is imperfect. Sometimes *Killer*s walk through the middle of
 nests and get damaged faster than they can escape. Sometimes, they can't find a
 way to reach an enemy.
 
+**If you see modified defaults on a new save, go to the *Main Menu*, then
+*Settings*, then *Mod Settings*, then *Map* and finally reset all the *Hunter
+and Killer Spidertrons* settings to the default values.**
+
 ## Roadmap / ChangeLog
 
 - 0.1: Killer function
@@ -38,9 +42,8 @@ way to reach an enemy.
 - 0.5.3: Bug fix
   - [X] Error on starting new game
 - 0.6: Update to Factorio 2.0
-  - [ ] Bug: Groups of 1 don't work
-  - [ ] Bug: No warning if total number of spiders is smaller than group size
-  - [ ] Bug: Default parameters are not set correctly
+  - [X] Bug: Groups of 1 don't work
+  - [X] Bug: No warning if total number of spiders is smaller than group size
 - 0.6.1: Multi-surface fixes
   - [ ] Check surfaces with killers on them
   - [ ] Send killers to targets on their surface
@@ -194,6 +197,10 @@ remote. This will disband the group and the leader/follower ratio will stabilize
 ## Settings
 
 Beginning version 0.3, the mod has some tunable parameters.
+
+**If you see modified defaults on a new save, go to the *Main Menu*, then
+*Settings*, then *Mod Settings*, then *Map* and finally reset all the *Hunter
+and Killer Spidertrons* settings to the default values.**
 
 ### Number of enemies to check per scan cycle
 

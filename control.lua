@@ -1051,15 +1051,21 @@ local function send_killer_to_target()
           -- Delete target and surrounding targets, make closest_k a leader
           closest_k.target_path = nil
           closest_k.dont_tap = nil
+          local store_path = true
+          local next_state = kState_leader
+          if group_size == 1 then
+            store_path = false
+            next_state = kState_approach
+          end
           plan_path(
             closest_k,
             closest_t.box.target.position,
-            kState_leader,
+            next_state,
             kState_idle,
             {
               target = closest_t.box.target,
             },
-            { store_path = true }
+            { store_path = store_path }
             )
           local in_range = {}
           storage.target_tree:range( {
@@ -1183,6 +1189,18 @@ local function spidertron_rescan()
   detect_homebases()
 end
 
+local function sanity_check()
+  -- No homebases
+  if table_size(storage.homebases) == 0 then
+    game.print( 'Hunter&Killer: No homebase on nauvis.\nSet at least one custom tag in the map view named "Homebase". No quotes, case matters.')
+  end
+  -- Total number of spiders is smaller than group size
+  local num_vehicles = table_size(storage.vehicles)
+  if (num_vehicles > 0) and (num_vehicles < settings.global['hunter-killer-attack-group-size'].value) then
+    game.print( 'Hunter&Killer: Group size is larger than current number of Killers.\nReduce group size in Map Settings.')
+  end
+end
+
 -- Register events: vehicle list may have changed
 script.on_event(defines.events.on_entity_renamed, detect_vehicles)
 script.on_event(defines.events.on_entity_cloned, detect_vehicles)
@@ -1202,6 +1220,9 @@ script.on_nth_tick(settings.startup['hunter-killer-freq-targets'].value, spidert
 
 -- Register event: Update state
 script.on_nth_tick(settings.startup['hunter-killer-freq-state'].value, spidertron_state_machine)
+
+-- Register event: Basic sanity check every minute
+script.on_nth_tick(3600, sanity_check)
 
 -- Register event: path planner is done
 script.on_event(defines.events.on_script_path_request_finished, path_planner_finished)
