@@ -1181,10 +1181,6 @@ end
 local function spidertron_rescan()
   detect_vehicles()
   detect_homebases()
-
-  for i,p in pairs(storage) do
-    log( '>>' .. i .. '<<: ' .. serpent.line(p))
-  end
 end
 
 -- Register events: vehicle list may have changed

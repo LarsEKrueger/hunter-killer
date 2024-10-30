@@ -34,23 +34,19 @@ way to reach an enemy.
 - 0.3: Settings
 - 0.4: Different Loadouts
 - 0.5: Multiple killer groups
-  - [X] Parameter: Group size
-  - [X] Remove block list
-  - [X] Plan way from group leader to target before/during assembling.
-  - [X] R-tree for targets: https://github.com/rick4stley/rstar/
-  - [X] Delete all targets in a radius around an accepted one
-  - [X] Send leader and follower to last planned point outside attack range
-  - [X] group size 1
 - 0.5.1: Bug fixes
-  - [X] Install rstar files
-  - [X] Pick closest killer, not first
-  - [X] Debug output
-  - [X] Filter out water chunks from exploration list
-- 0.5.2: Bug fix
+- 0.5.3: Bug fix
   - [X] Error on starting new game
-- 0.5.3: Group improvements
+- 0.6: Update to Factorio 2.0
+  - [ ] Bug: Groups of 1 don't work
+  - [ ] Bug: No warning if total number of spiders is smaller than group size
+  - [ ] Bug: Default parameters are not set correctly
+- 0.6.1: Multi-surface fixes
+  - [ ] Check surfaces with killers on them
+  - [ ] Send killers to targets on their surface
+- 0.6.2: Group improvements
   - [ ] Different group size for exploration target
-- 0.6: Hunter function
+- 0.7: Hunter function
 
 ## How does the *Killer* operate?
 
