@@ -44,8 +44,6 @@ function StatisticsReporter.new( message, always_report)
     _message = message,
     _always_report = always_report,
     _values = {},
-    set = StatisticsReporter.set,
-    report = StatisticsReporter.report,
   }, StatisticsReporterMt)
   return self
 end

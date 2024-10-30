@@ -26,7 +26,7 @@ local rstar = require 'rstar/rstar'
 local targets = {}
 
 function targets.ensure_globals()
-  global.target_tree = global.target_tree or rstar.new()
+  storage.target_tree = storage.target_tree or rstar.new()
 end
 
 return targets

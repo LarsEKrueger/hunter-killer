@@ -36,7 +36,7 @@ local aabb = require 'rstar/aabb'
 -- Count and print number of killers
 local function count_killers(vehicles, suffix)
   local killer_count = table_size( vehicles)
-  global.report_killers:set(killer_count)
+  storage.report_killers:set(killer_count)
 end
 
 -- Count and print number of homebases
@@ -47,7 +47,7 @@ local function count_bases(bases)
     count = count + 1
     b=b.nxt
   end
-  global.report_bases:set(count)
+  storage.report_bases:set(count)
 end
 
 -- Check if a vehicle is eligible to be managed by the mod.
@@ -84,7 +84,7 @@ end
 -- vehicle object will be used as the value in the table.
 local function detect_vehicles()
   -- Get the vehicle list or start from scratch
-  local old_vehicles = global.vehicles or {}
+  local old_vehicles = storage.vehicles or {}
   local new_vehicles = {}
 
   -- Go through all managed vehicles and remove those that are no longer eligible.
@@ -109,7 +109,7 @@ local function detect_vehicles()
   end
 
   -- Write back the list
-  global.vehicles = new_vehicles
+  storage.vehicles = new_vehicles
 
   count_killers( new_vehicles, ' managed')
 end
@@ -133,9 +133,9 @@ local function detect_homebases()
   end
 
   -- Write back the list
-  global.homebases = bases
+  storage.homebases = bases
 
-  count_bases(global.homebases)
+  count_bases(storage.homebases)
 end
 
 -- Compute the distance between two MapPositions
@@ -160,29 +160,29 @@ end
 -- Get the list of targets. Return true if targets were checked
 local function find_valid_targets()
   local nauvis = game.surfaces['nauvis']
-  if (not global.enemy_list) and global.target_tree:isEmpty() then
+  if (not storage.enemy_list) and storage.target_tree:isEmpty() then
     local targets = nauvis.find_entities_filtered{
       force='enemy',
       is_military_target=true,
       type={'turret', 'spawner', 'unit-spawner'},
     }
-    global.enemy_list = targets
+    storage.enemy_list = targets
     if #targets > 0 then
-      global.report_targets:set(#targets)
+      storage.report_targets:set(#targets)
     end
-    global.targets_count = 0
+    storage.targets_count = 0
   end
   local some_checked = false
-  if global.enemy_list then
+  if storage.enemy_list then
     local enemies_to_check = settings.global['hunter-killer-enemies-per-cycle'].value
     local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
     local checked = 0
 
     local force = game.forces['player']
-    while (checked < enemies_to_check) and (#global.enemy_list > 0) do
-      local idx = #global.enemy_list
-      local tgt = global.enemy_list[idx]
-      table.remove(global.enemy_list,idx)
+    while (checked < enemies_to_check) and (#storage.enemy_list > 0) do
+      local idx = #storage.enemy_list
+      local tgt = storage.enemy_list[idx]
+      table.remove(storage.enemy_list,idx)
       some_checked = true
       if tgt.valid then
         local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
@@ -201,8 +201,8 @@ local function find_valid_targets()
         end
         if is_polluted then
           local box = box_from_target( tgt)
-          global.target_tree:insert(box)
-          global.targets_count = (global.targets_count or 0) + 1
+          storage.target_tree:insert(box)
+          storage.targets_count = (storage.targets_count or 0) + 1
         end
       end
       checked = checked + 1
@@ -239,22 +239,22 @@ end
 local function find_chunks_to_explore()
   local force = game.forces['player']
   local nauvis = game.surfaces['nauvis']
-  if not global.chunk_iterator and global.target_tree:isEmpty() then
-    global.chunk_iterator = nauvis.get_chunks()
-    global.place_count = 0
+  if not storage.chunk_iterator and storage.target_tree:isEmpty() then
+    storage.chunk_iterator = nauvis.get_chunks()
+    storage.place_count = 0
   end
 
-  if global.chunk_iterator then
+  if storage.chunk_iterator then
     local chunks_to_check = settings.global['hunter-killer-chunks-per-cycle'].value
     local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
     local checked = 0
     local added = false
     while (checked < chunks_to_check) do
-      local chunk = global.chunk_iterator()
+      local chunk = storage.chunk_iterator()
       if not chunk then
-        global.report_places:set( global.place_count)
-        global.chunk_iterator = nil
-        global.enemy_list = nil
+        storage.report_places:set( storage.place_count)
+        storage.chunk_iterator = nil
+        storage.enemy_list = nil
         break
       end
       local map_pos = interesting_for_exploration(chunk, chunk_rad)
@@ -263,7 +263,7 @@ local function find_chunks_to_explore()
         local tile = nauvis.get_tile(map_pos)
         if not tile or not tile.valid or (tile.name ~= 'water' and tile.name ~= 'deepwater') then
           -- Add a fake target and mark it as an exploration target
-          global.target_tree:insert( box_from_target(
+          storage.target_tree:insert( box_from_target(
           {
             position = map_pos,
             valid = true,
@@ -271,7 +271,7 @@ local function find_chunks_to_explore()
             type = 'exploration',
             chunk = chunk,
           }))
-          global.place_count = global.place_count + 1
+          storage.place_count = storage.place_count + 1
           added = true
         end
       end
@@ -301,16 +301,12 @@ local function plan_path( killer, target, ok_state, fail_state, info, req_info)
   end
 
   -- Set a reasonable default for the collision mask to avoid walking through water
-  local pathing_collision_mask = {"water-tile", "consider-tile-transitions", "colliding-with-tiles-only", "not-colliding-with-itself"}
-  -- Find the first custom collision layer, hoping that it's the one we created. Set this as the collision mask for the search.
-  local water_proto = game.tile_prototypes['water']
-  local water_collision_mask = water_proto.collision_mask
-  for name,v in pairs(water_collision_mask) do
-    if util.string_starts_with(name,'layer-') then
-      pathing_collision_mask = { name }
-      break
-    end
-  end
+  local pathing_collision_mask = {
+    layers = { water_tile = true },
+    consider_tile_transitions = true,
+    colliding_with_tiles_only = true,
+    not_colliding_with_itself = true
+  }
 
   local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
   local pf_rad = settings.global['hunter-killer-pf-radius'].value
@@ -339,12 +335,12 @@ local function plan_path( killer, target, ok_state, fail_state, info, req_info)
 
   local nauvis = game.surfaces['nauvis']
 
-  global.pathfinder_requests = global.pathfinder_requests or {}
+  storage.pathfinder_requests = storage.pathfinder_requests or {}
   if killer.request_id then
-    global.pathfinder_requests[killer.request_id] = nil
+    storage.pathfinder_requests[killer.request_id] = nil
   end
   local request_id = nauvis.request_path(request)
-  global.pathfinder_requests[request_id] = request
+  storage.pathfinder_requests[request_id] = request
   killer.request_id = request_id
   killer.pathfinder_request = request
   killer.target_pos = target
@@ -359,8 +355,8 @@ end
 
 -- Event callback if the planner is done
 local function path_planner_finished(event)
-  if global.pathfinder_requests then
-    local request = global.pathfinder_requests[event.id]
+  if storage.pathfinder_requests then
+    local request = storage.pathfinder_requests[event.id]
     if request then
       if event.path then
         if request.killer.vehicle.valid then
@@ -379,11 +375,11 @@ local function path_planner_finished(event)
         request.killer.state = request.killer.fail_state
       end
       if request.killer.request_id then
-        global.pathfinder_requests[request.killer.request_id] = nil
+        storage.pathfinder_requests[request.killer.request_id] = nil
       end
       request.killer.request_id = nil
       request.killer.pathfinder_request = nil
-      global.pathfinder_requests[event.id] = nil
+      storage.pathfinder_requests[event.id] = nil
     end
   end
 end
@@ -401,7 +397,7 @@ local function vehicle_go_home(killer)
 
   local home_dist = nil
   local home = nil
-  local base = global.homebases
+  local base = storage.homebases
   while base do
     if base.tag and base.tag.valid then
       local d = dist_between_pos( base.tag.position, killer.vehicle.position)
@@ -437,31 +433,31 @@ local function vehicle_wants_home(vehicle, min_health)
   local ammo_inv = vehicle.get_inventory(defines.inventory.spider_ammo)
   local trunk_inv = vehicle.get_inventory(defines.inventory.spider_trunk)
   local fuel_inv = vehicle.get_inventory(defines.inventory.fuel)
-  -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
-  -- Stop at the first empty logistics slot.
-  local slot = 1
-  while true do
-    local log_req = vehicle.get_vehicle_logistic_slot(slot)
-    if not log_req.name then
-      break
+  -- Go through the logistics slots and check that enough items are in ammo + trunk + fuel.
+  for logPointInd, logPoint in pairs( vehicle.get_logistic_point()) do
+    for logSectInd, logSect in pairs( logPoint.sections) do
+      for logFilterInd, logFilter in pairs( logSect.filters) do
+        local log_req = logFilter.value
+        if not log_req.name then
+          break
+        end
+        local ammo_count = 0
+        local trunk_count = 0
+        local fuel_count = 0
+        if ammo_inv then
+          ammo_count = ammo_inv.get_item_count(log_req.name)
+        end
+        if trunk_inv then
+          trunk_count = trunk_inv.get_item_count(log_req.name)
+        end
+        if fuel_inv then
+          fuel_count = fuel_inv.get_item_count(log_req.name)
+        end
+        if ((ammo_count + trunk_count + fuel_count) == 0) then
+          return true
+        end
+      end
     end
-    local ammo_count = 0
-    local trunk_count = 0
-    local fuel_count = 0
-    if ammo_inv then
-      ammo_count = ammo_inv.get_item_count(log_req.name)
-    end
-    if trunk_inv then
-      trunk_count = trunk_inv.get_item_count(log_req.name)
-    end
-    if fuel_inv then
-      fuel_count = fuel_inv.get_item_count(log_req.name)
-    end
-    -- Ignore auto-trash items
-    if (log_req.max > 0) and ((ammo_count + trunk_count + fuel_count) == 0) then
-      return true
-    end
-    slot = slot + 1
   end
   return false
 end
@@ -636,31 +632,32 @@ local function trans_killer_re_arm( killer)
     local trunk_inv = killer.vehicle.get_inventory(defines.inventory.spider_trunk)
     local fuel_inv = killer.vehicle.get_inventory(defines.inventory.fuel)
     -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
-    -- Stop at the first empty logistics slot.
-    local slot = 1
     local rearmed = true
-    while true do
-      local log_req = killer.vehicle.get_vehicle_logistic_slot(slot)
-      if not log_req.name then
-        break
+    for logPointInd, logPoint in pairs( killer.vehicle.get_logistic_point()) do
+      for logSectInd, logSect in pairs( logPoint.sections) do
+        for logFilterInd, logFilter in pairs( logSect.filters) do
+          local log_req = logFilter.value
+          if not log_req.name then
+            break
+          end
+          local ammo_count = 0
+          local trunk_count = 0
+          local fuel_count = 0
+          if ammo_inv then
+            ammo_count = ammo_inv.get_item_count(log_req.name)
+          end
+          if trunk_inv then
+            trunk_count = trunk_inv.get_item_count(log_req.name)
+          end
+          if fuel_inv then
+            fuel_count = fuel_inv.get_item_count(log_req.name)
+          end
+          if (ammo_count + trunk_count + fuel_count) < logFilter.min then
+            rearmed = false
+            break
+          end
+        end
       end
-      local ammo_count = 0
-      local trunk_count = 0
-      local fuel_count = 0
-      if ammo_inv then
-        ammo_count = ammo_inv.get_item_count(log_req.name)
-      end
-      if trunk_inv then
-        trunk_count = trunk_inv.get_item_count(log_req.name)
-      end
-      if fuel_inv then
-        fuel_count = fuel_inv.get_item_count(log_req.name)
-      end
-      if (ammo_count + trunk_count + fuel_count) < log_req.min then
-        rearmed = false
-        break
-      end
-      slot = slot + 1
     end
     if rearmed then
         killer.state = kState_idle
@@ -683,8 +680,8 @@ local function trans_killer_planning( killer)
       if #killer.vehicle.autopilot_destinations == 1 then
         killer.state = kState_walking
         if killer.request_id then
-          global.pathfinder_requests = global.pathfinder_requests or {}
-          global.pathfinder_requests[killer.request_id] = nil
+          storage.pathfinder_requests = storage.pathfinder_requests or {}
+          storage.pathfinder_requests[killer.request_id] = nil
           killer.request_id = nil
           killer.pathfinder_request = nil
         end
@@ -709,12 +706,12 @@ local function trans_killer_planning( killer)
   end
 
   -- Check the request needs to be tried again
-  if another_round and killer.request_id and global.pathfinder_requests and not global.pathfinder_requests[killer.request_id] then
+  if another_round and killer.request_id and storage.pathfinder_requests and not storage.pathfinder_requests[killer.request_id] then
 
     local request = killer.pathfinder_request
     if request then
       local request_id = nauvis.request_path(request)
-      global.pathfinder_requests[request_id] = request
+      storage.pathfinder_requests[request_id] = request
       killer.request_id = request_id
     else
       killer.vehicle.autopilot_destination = nil
@@ -734,7 +731,7 @@ local function trans_killer_planning( killer)
       if not killer.target or not killer.target.valid then
         killer.state = killer.fail_state
         if killer.request_id then
-          global.pathfinder_requests[killer.request_id] = nil
+          storage.pathfinder_requests[killer.request_id] = nil
           killer.request_id = nil
         end
         return
@@ -873,7 +870,7 @@ end
 local function send_killer_to_target()
   local force = game.forces['player']
   if not force.is_pathfinder_busy() then
-    local killers = global.vehicles or {}
+    local killers = storage.vehicles or {}
     local min_health = get_min_health()
     local group_size = settings.global['hunter-killer-attack-group-size'].value
     local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
@@ -1010,11 +1007,11 @@ local function send_killer_to_target()
           if leading_killers < max_groups then
             local tgt = killer.cached_closest
             if not tgt then
-              tgt = global.target_tree:nearest(box_from_target(killer.vehicle))
+              tgt = storage.target_tree:nearest(box_from_target(killer.vehicle))
               killer.cached_closest = tgt
             end
             if tgt and not tgt.box.target.valid then
-              global.target_tree:delete(tgt.id)
+              storage.target_tree:delete(tgt.id)
               tgt = nil
             end
             if tgt then
@@ -1065,16 +1062,16 @@ local function send_killer_to_target()
             { store_path = true }
             )
           local in_range = {}
-          global.target_tree:range( {
+          storage.target_tree:range( {
             x=closest_t.box.target.position.x,
             y=closest_t.box.target.position.y,
             r=pf_rad}, in_range)
           for _,box in ipairs(in_range) do
-            global.target_tree:delete(box.id)
+            storage.target_tree:delete(box.id)
           end
           -- Original box needs to be deleted. There are cases where the
           -- box is not inside its own range.
-          global.target_tree:delete(closest_t.id)
+          storage.target_tree:delete(closest_t.id)
         else
           -- Send towards the assembly point of the group leader
           closest_k.dont_tap = nil
@@ -1103,7 +1100,7 @@ end
 -- Part of state machine processing, to be called frequently
 local function spidertron_state_machine()
   local rescan_vehicles = false
-  local killers = global.vehicles or {}
+  local killers = storage.vehicles or {}
 
   for id,killer in pairs(killers) do
     if killer.vehicle and killer.vehicle.valid then
@@ -1137,9 +1134,9 @@ local function spidertron_find_targets(event)
   if not find_valid_targets() then
     find_chunks_to_explore()
   end
-  if settings.global['hunter-killer-debug-print-targets'].value and global.target_tree then
+  if settings.global['hunter-killer-debug-print-targets'].value and storage.target_tree then
     local cnt=0
-    local traverse = { global.target_tree.root }
+    local traverse = { storage.target_tree.root }
     while #traverse > 0 do
       local b = table.remove(traverse, 1)
       if b.is_leaf then
@@ -1159,24 +1156,24 @@ local function spidertron_find_targets(event)
       end
     end
     -- Compute burndown rate
-    if not global.hunter_killer_last_cnt or not global.hunter_killer_last_cnt_tick or (event.tick <= global.hunter_killer_last_cnt_tick) or (cnt > global.hunter_killer_last_cnt) then
-      global.hunter_killer_last_cnt = cnt
-      global.hunter_killer_last_cnt_tick = event.tick
+    if not storage.hunter_killer_last_cnt or not storage.hunter_killer_last_cnt_tick or (event.tick <= storage.hunter_killer_last_cnt_tick) or (cnt > storage.hunter_killer_last_cnt) then
+      storage.hunter_killer_last_cnt = cnt
+      storage.hunter_killer_last_cnt_tick = event.tick
       game.print( cnt .. ' places to visit')
     else
-      local bd = global.hunter_killer_last_cnt - cnt
-      local dt = event.tick - global.hunter_killer_last_cnt_tick
+      local bd = storage.hunter_killer_last_cnt - cnt
+      local dt = event.tick - storage.hunter_killer_last_cnt_tick
       -- Removed entries / minute
       local bdr = 3600.0 * bd / dt
-      if not global.hunter_killer_bdr_avg then
-        global.hunter_killer_bdr_avg = bdr
+      if not storage.hunter_killer_bdr_avg then
+        storage.hunter_killer_bdr_avg = bdr
         game.print( cnt .. ' places to visit. ' .. bdr .. ' checks per minute')
       else
-        global.hunter_killer_bdr_avg = 0.99 * global.hunter_killer_bdr_avg + 0.01 * bdr
-        game.print( cnt .. ' places to visit. ' .. global.hunter_killer_bdr_avg .. ' checks per minute on average')
+        storage.hunter_killer_bdr_avg = 0.99 * storage.hunter_killer_bdr_avg + 0.01 * bdr
+        game.print( cnt .. ' places to visit. ' .. storage.hunter_killer_bdr_avg .. ' checks per minute on average')
       end
-      global.hunter_killer_last_cnt = cnt
-      global.hunter_killer_last_cnt_tick = event.tick
+      storage.hunter_killer_last_cnt = cnt
+      storage.hunter_killer_last_cnt_tick = event.tick
     end
   end
 end
@@ -1184,6 +1181,10 @@ end
 local function spidertron_rescan()
   detect_vehicles()
   detect_homebases()
+
+  for i,p in pairs(storage) do
+    log( '>>' .. i .. '<<: ' .. serpent.line(p))
+  end
 end
 
 -- Register events: vehicle list may have changed

@@ -28,10 +28,10 @@ local reporters = {}
 
 function reporters.ensure_globals()
   -- Create the reporters if they don't exist
-  global.report_bases = global.report_bases or StatisticsReporter.new( 'Home bases managed: ', true)
-  global.report_killers = global.report_killers or StatisticsReporter.new( 'Killers managed: ', true)
-  global.report_targets = global.report_targets or StatisticsReporter.new( 'Enemies of the realm: ', false)
-  global.report_places = global.report_places or StatisticsReporter.new( 'Places to visit: ', false)
+  storage.report_bases = storage.report_bases or StatisticsReporter.new( 'Home bases managed: ', true)
+  storage.report_killers = storage.report_killers or StatisticsReporter.new( 'Killers managed: ', true)
+  storage.report_targets = storage.report_targets or StatisticsReporter.new( 'Enemies of the realm: ', false)
+  storage.report_places = storage.report_places or StatisticsReporter.new( 'Places to visit: ', false)
 end
 
 return reporters
