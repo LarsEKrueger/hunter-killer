@@ -1,5 +1,10 @@
 # Factorio Mod: Turn Spidertrons into automatic biter killing machines
 
+**Help wanted! Inquire within!**
+
+This mod is looking for contributors and/or a new maintainer. If you are
+interested, send an [email](email:lars_e_krueger@gmx.de).
+
 ## Introduction
 
 As I find it boring to play without biters and too annoying to deal with them
