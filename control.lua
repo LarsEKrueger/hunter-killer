@@ -1191,7 +1191,7 @@ end
 
 local function sanity_check()
   -- No homebases
-  if table_size(storage.homebases) == 0 then
+  if storage.homebases == nil or table_size(storage.homebases) == 0 then
     game.print( 'Hunter&Killer: No homebase on nauvis.\nSet at least one custom tag in the map view named "Homebase". No quotes, case matters.')
   end
   -- Total number of spiders is smaller than group size
