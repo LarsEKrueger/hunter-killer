@@ -45,15 +45,15 @@ and Killer Spidertrons* settings to the default values.**
 - 0.5: Multiple killer groups
 - 0.5.1: Bug fixes
 - 0.5.3: Bug fix
-  - [X] Error on starting new game
 - 0.6: Update to Factorio 2.0
-  - [X] Bug: Groups of 1 don't work
-  - [X] Bug: No warning if total number of spiders is smaller than group size
-- 0.6.1: Multi-surface fixes
-  - [ ] Check surfaces with killers on them
-  - [ ] Send killers to targets on their surface
-- 0.6.2: Group improvements
-  - [ ] Different group size for exploration target
+- 0.6.1: Bug fix
+  - ☑ Don't crash sanity check if there are no Homebase markers
+- 0.6.2: Multi-surface fixes
+  - ☐ Check surfaces with killers on them
+  - ☐ Send killers to targets on their surface
+  - ☐ Test with finite maps. Special mode to find all targets if map is finite.
+- 0.6.3: Group improvements
+  - ☐ Different group size for exploration target
 - 0.7: Hunter function
 
 ## How does the *Killer* operate?
