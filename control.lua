@@ -299,7 +299,7 @@ local kState_leader     = 8
 local kState_follower   = 9
 
 -- Plan a path from target to current position.
-local function plan_path( killer, target, ok_state, fail_state, info, req_info)
+local function plan_path( killer, target, ok_state, fail_state, pf_rad, info, req_info)
   -- Center of the circle we're walking while waiting for the planner to finish
   if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 33.0 then
     killer.taptap_ctr = killer.vehicle.position
@@ -314,7 +314,7 @@ local function plan_path( killer, target, ok_state, fail_state, info, req_info)
   }
 
   local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
-  local pf_rad = settings.global['hunter-killer-pf-radius'].value
+  -- local pf_rad = settings.global['hunter-killer-pf-radius'].value
 
   local request = {
     -- Keep a respectful distance to water and nests
@@ -416,7 +416,8 @@ local function vehicle_go_home(killer)
 
   if home then
     killer.home_position = home.position
-    plan_path(killer, home.position, kState_goHome, kState_idle, {})
+    -- Send killers to marker, with just a bit of spacing to select them
+    plan_path(killer, home.position, kState_goHome, kState_idle, 8.0, {})
     ok = true
   end
   return ok
@@ -1062,11 +1063,14 @@ local function send_killer_to_target()
             store_path = false
             next_state = kState_approach
           end
+          -- Keep selected distance to target
+          local pf_rad = settings.global['hunter-killer-pf-radius'].value
           plan_path(
             closest_k,
             closest_t.box.target.position,
             next_state,
             kState_idle,
+            pf_rad,
             {
               target = closest_t.box.target,
             },
@@ -1084,13 +1088,15 @@ local function send_killer_to_target()
           -- box is not inside its own range.
           storage.target_tree:delete(closest_t.id)
         else
-          -- Send towards the assembly point of the group leader
+          -- Send towards the assembly point of the group leader. Keep them
+          -- close together so they can start at the same time.
           closest_k.dont_tap = nil
           plan_path(
             closest_k,
             closest_t.assembly_point,
             kState_follower,
             kState_idle,
+            4.0,
             {
               group_leader = closest_t,
               -- Make a copy of the current position to detect if the leader moved
