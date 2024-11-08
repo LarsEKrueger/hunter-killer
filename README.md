@@ -47,12 +47,13 @@ and Killer Spidertrons* settings to the default values.**
 - 0.5.3: Bug fix
 - 0.6: Update to Factorio 2.0
 - 0.6.1: Bug fix
-  - ☑ Don't crash sanity check if there are no Homebase markers
-- 0.6.2: Multi-surface fixes
+- 0.6.2: Search And Destroy Mode
+  - ☑ Find targets anywhere on the map
+- 0.6.3: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.6.3: Group improvements
+- 0.6.4: Group improvements
   - ☐ Different group size for exploration target
 - 0.7: Hunter function
 
@@ -435,6 +436,15 @@ Higher numbers increase the power of a single attack.
 * Max: 1000000
 * Unit: Spidertrons
 * Internal name: `hunter-killer-attack-group-size`
+
+### Search & Destroy
+
+If on, search target anywhere on the map, regardless the pollution. This might
+slow down the game over time as it reveals the whole (reachable) map.
+
+* Earliest visible effect: Next Scan Cycle
+* Default: Off
+* Internal name: `hunter-killer-search-and-destroy-mode`
 
 ## Limitations and Recommended Mods
 

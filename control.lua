@@ -176,6 +176,7 @@ local function find_valid_targets()
   if storage.enemy_list then
     local enemies_to_check = settings.global['hunter-killer-enemies-per-cycle'].value
     local chunk_rad = settings.global['hunter-killer-pollution-radius'].value
+    local sad_mode = settings.global['hunter-killer-search-and-destroy-mode'].value
     local checked = 0
 
     local force = game.forces['player']
@@ -186,7 +187,7 @@ local function find_valid_targets()
       some_checked = true
       if tgt.valid then
         local tgt_chunk_pos = {x=tgt.position.x/32.0,y=tgt.position.y/32.0}
-        local is_polluted = false
+        local is_polluted = sad_mode
         for dx = -chunk_rad,chunk_rad do
           if is_polluted then
             break
@@ -217,6 +218,10 @@ local function interesting_for_exploration( chunk, chunk_rad)
   local nauvis = game.surfaces['nauvis']
   local uncharted = 0
   local polluted = 0
+  local sad_mode = settings.global['hunter-killer-search-and-destroy-mode'].value
+  if sad_mode then
+    polluted = 1
+  end
   if chunk and force.is_chunk_charted('nauvis', {chunk.x,chunk.y}) then
     local map_pos = {x=chunk.x * 32.0 + 16.0, y=chunk.y * 32.0 + 16.0}
     for dx = -chunk_rad,chunk_rad do

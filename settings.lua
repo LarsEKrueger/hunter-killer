@@ -160,5 +160,13 @@ data:extend({
     type = "bool-setting",
     setting_type = "runtime-global",
     default_value = false,
+  },
+  {
+    name = "hunter-killer-search-and-destroy-mode",
+    localised_name = "Search & Destroy",
+    localised_description = "Kill even targets outside the pollution",
+    type = "bool-setting",
+    setting_type = "runtime-global",
+    default_value = false,
   }
 })
