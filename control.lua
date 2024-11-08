@@ -307,14 +307,13 @@ local function plan_path( killer, target, ok_state, fail_state, pf_rad, info, re
 
   -- Set a reasonable default for the collision mask to avoid walking through water
   local pathing_collision_mask = {
-    layers = { water_tile = true },
+    layers = { water_tile = true, hk_nest_layer = true },
     consider_tile_transitions = true,
     colliding_with_tiles_only = true,
     not_colliding_with_itself = true
   }
 
   local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
-  -- local pf_rad = settings.global['hunter-killer-pf-radius'].value
 
   local request = {
     -- Keep a respectful distance to water and nests
