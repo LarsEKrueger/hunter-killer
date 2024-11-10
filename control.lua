@@ -467,6 +467,43 @@ local function vehicle_wants_home(vehicle, min_health)
   return false
 end
 
+-- Check if a vehicle has been fully rearmed
+local function vehicle_is_rearmed(vehicle)
+  if vehicle.get_health_ratio() < 1.0 then
+    return false
+  end
+  local ammo_inv = vehicle.get_inventory(defines.inventory.spider_ammo)
+  local trunk_inv = vehicle.get_inventory(defines.inventory.spider_trunk)
+  local fuel_inv = vehicle.get_inventory(defines.inventory.fuel)
+  -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
+  for logPointInd, logPoint in pairs( vehicle.get_logistic_point()) do
+    for logSectInd, logSect in pairs( logPoint.sections) do
+      for logFilterInd, logFilter in pairs( logSect.filters) do
+        local log_req = logFilter.value
+        if not log_req.name then
+          break
+        end
+        local ammo_count = 0
+        local trunk_count = 0
+        local fuel_count = 0
+        if ammo_inv then
+          ammo_count = ammo_inv.get_item_count(log_req.name)
+        end
+        if trunk_inv then
+          trunk_count = trunk_inv.get_item_count(log_req.name)
+        end
+        if fuel_inv then
+          fuel_count = fuel_inv.get_item_count(log_req.name)
+        end
+        if (ammo_count + trunk_count + fuel_count) < logFilter.min then
+          return false
+        end
+      end
+    end
+  end
+  return true
+end
+
 -- Helper function to switch out equipment in the grid.
 -- Taken from Constructron-Continued (MIT license).
 ---@param grid LuaEquipmentGrid
@@ -612,8 +649,8 @@ local function trans_killer_go_home( killer)
   -- blue
   killer.vehicle.color = {0.0, 0.0, 1.0, 1.0}
 
-  -- If vehicle doesn't want to go home anymore, go idle
-  if not vehicle_wants_home(killer.vehicle, 1.0) then
+  -- If vehicle has be rearmed underway, go idle
+  if vehicle_is_rearmed(killer.vehicle) then
     killer.state = kState_idle
     killer.autopilot_destination = nil
   elseif not have_autopilot(killer.vehicle) then
@@ -632,41 +669,8 @@ local function trans_killer_re_arm( killer)
       return
     end
   end
-  if killer.vehicle.get_health_ratio() >= 1.0 then
-    local ammo_inv = killer.vehicle.get_inventory(defines.inventory.spider_ammo)
-    local trunk_inv = killer.vehicle.get_inventory(defines.inventory.spider_trunk)
-    local fuel_inv = killer.vehicle.get_inventory(defines.inventory.fuel)
-    -- Go through the logistics slots and check the enough items are in ammo + trunk + fuel.
-    local rearmed = true
-    for logPointInd, logPoint in pairs( killer.vehicle.get_logistic_point()) do
-      for logSectInd, logSect in pairs( logPoint.sections) do
-        for logFilterInd, logFilter in pairs( logSect.filters) do
-          local log_req = logFilter.value
-          if not log_req.name then
-            break
-          end
-          local ammo_count = 0
-          local trunk_count = 0
-          local fuel_count = 0
-          if ammo_inv then
-            ammo_count = ammo_inv.get_item_count(log_req.name)
-          end
-          if trunk_inv then
-            trunk_count = trunk_inv.get_item_count(log_req.name)
-          end
-          if fuel_inv then
-            fuel_count = fuel_inv.get_item_count(log_req.name)
-          end
-          if (ammo_count + trunk_count + fuel_count) < logFilter.min then
-            rearmed = false
-            break
-          end
-        end
-      end
-    end
-    if rearmed then
-        killer.state = kState_idle
-    end
+  if vehicle_is_rearmed(killer.vehicle) then
+    killer.state = kState_idle
   end
 end
 
