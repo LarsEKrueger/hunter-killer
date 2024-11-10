@@ -1209,9 +1209,11 @@ local function sanity_check()
     game.print( 'Hunter&Killer: No homebase on nauvis.\nSet at least one custom tag in the map view named "Homebase". No quotes, case matters.')
   end
   -- Total number of spiders is smaller than group size
-  local num_vehicles = table_size(storage.vehicles)
-  if (num_vehicles > 0) and (num_vehicles < settings.global['hunter-killer-attack-group-size'].value) then
-    game.print( 'Hunter&Killer: Group size is larger than current number of Killers.\nReduce group size in Map Settings.')
+  if storage.vehicles then
+    local num_vehicles = table_size(storage.vehicles)
+    if (num_vehicles > 0) and (num_vehicles < settings.global['hunter-killer-attack-group-size'].value) then
+      game.print( 'Hunter&Killer: Group size is larger than current number of Killers.\nReduce group size in Map Settings.')
+    end
   end
 end
 

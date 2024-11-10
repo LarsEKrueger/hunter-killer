@@ -48,13 +48,15 @@ and Killer Spidertrons* settings to the default values.**
 - 0.6: Update to Factorio 2.0
 - 0.6.1: Bug fix
 - 0.6.2: Search And Destroy Mode
-- 0.6.5: Bug fix
+- 0.6.3: Bug fix
   - ☑ Fix Killers leaving Homebase before being completely rearmed
-- 0.6.4: Multi-surface fixes
+- 0.6.4: Bug fix
+  - ☑ Crash during map generation
+- 0.6.5: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.6.5: Group improvements
+- 0.6.6: Group improvements
   - ☐ Different group size for exploration target
 - 0.7: Hunter function
 
