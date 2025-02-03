@@ -50,18 +50,25 @@ local function count_bases(bases)
   storage.report_bases:set(count)
 end
 
+local kEligible_no = 0
+local kEligible_walk = 1
+local kEligible_fly = 2
 -- Check if a vehicle is eligible to be managed by the mod.
 local function is_eligible_vehicle(veh)
   if veh and veh.valid then
-    -- If the name of the vehicle starts with 'Killer', it's eligible.
+    -- If the name of the vehicle starts with 'Killer' or 'Predator', it's eligible.
     if veh.entity_label then
       local killer_pos = string.find(veh.entity_label, 'Killer', 0, true)
       if killer_pos and killer_pos == 1 then
-        return true
+        return kEligible_walk
+      end
+      local killer_pos = string.find(veh.entity_label, 'Predator', 0, true)
+      if killer_pos and killer_pos == 1 then
+        return kEligible_fly
       end
     end
   end
-  return false
+  return kEligible_no
 end
 
 -- Check if a tag is eligible to be managed by the mod.
@@ -90,7 +97,9 @@ local function detect_vehicles()
   -- Go through all managed vehicles and remove those that are no longer eligible.
   for id,state in pairs(old_vehicles) do
     -- If veh doesn't exist anymore or is no longer named correctly, don't copy it to the new table.
-    if is_eligible_vehicle(state.vehicle) then
+    local eligible = is_eligible_vehicle(state.vehicle)
+    if eligible ~= kEligible_no then
+      state.can_fly = (eligible == kEligible_fly)
       new_vehicles[id] = state
     end
   end
@@ -102,14 +111,24 @@ local function detect_vehicles()
         force='player'
       }
 
+  local group_count = {}
   for _,veh in ipairs(surf_vehicles) do
-    if not new_vehicles[veh.unit_number] and is_eligible_vehicle(veh) then
-      new_vehicles[veh.unit_number]={vehicle=veh, state=kState_idle, last_state=kState_idle}
+    group_count[veh.name] = 1 + (group_count[veh.name] or 0)
+    if not new_vehicles[veh.unit_number] then
+      local eligible = is_eligible_vehicle(veh)
+      if eligible ~= kEligible_no then
+        new_vehicles[veh.unit_number]={
+          vehicle=veh,
+          state=kState_idle,
+          last_state=kState_idle,
+          can_fly = (eligible == kEligible_fly)}
+      end
     end
   end
 
   -- Write back the list
   storage.vehicles = new_vehicles
+  storage.group_count = group_count
 
   count_killers( new_vehicles, ' managed')
 end
@@ -306,14 +325,28 @@ local function plan_path( killer, target, ok_state, fail_state, pf_rad, info, re
   end
 
   -- Set a reasonable default for the collision mask to avoid walking through water
-  local pathing_collision_mask = {
-    layers = { water_tile = true, hk_nest_layer = true },
-    consider_tile_transitions = true,
-    colliding_with_tiles_only = true,
-    not_colliding_with_itself = true
-  }
+  local pathing_collision_mask
+  if killer.can_fly then
+    pathing_collision_mask = {
+      layers = { hk_nest_layer = true },
+      consider_tile_transitions = true,
+      not_colliding_with_itself = true
+    }
+  else
+    pathing_collision_mask = {
+      layers = { water_tile = true, hk_nest_layer = true },
+      consider_tile_transitions = true,
+      colliding_with_tiles_only = true,
+      not_colliding_with_itself = true
+    }
+  end
 
   local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
+
+  local path_resolution_modifier = -3
+  if killer.can_fly then
+    path_resolution_modifier = -5
+  end
 
   local request = {
     -- Keep a respectful distance to water and nests
@@ -328,7 +361,7 @@ local function plan_path( killer, target, ok_state, fail_state, pf_rad, info, re
       cache = true,
       low_priority = false,
     },
-    path_resolution_modifier = -3,
+    path_resolution_modifier = path_resolution_modifier,
     killer = killer,
   }
   if req_info then
@@ -878,6 +911,9 @@ end
 -- when you have a large base with many spiders and long ways to go.
 local function send_killer_to_target()
   local force = game.forces['player']
+  if not storage.group_count then
+    detect_vehicles()
+  end
   if not force.is_pathfinder_busy() then
     local killers = storage.vehicles or {}
     local min_health = get_min_health()
@@ -885,7 +921,7 @@ local function send_killer_to_target()
     local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
     -- Count the idle killers and the leaders.
     local idle_killers = 0
-    local leading_killers = 0
+    local leading_killers = {}
     local total_killers = 0
     local complete_group = false
     -- Index by unit_number of group leader
@@ -934,7 +970,7 @@ local function send_killer_to_target()
           end
           -- If state is still leader, count it
           if (killer.state == kState_leader) then
-            leading_killers = leading_killers + 1
+            leading_killers[killer.vehicle.name] = 1 + (leading_killers[killer.vehicle.name] or 0)
           end
         elseif killer.state == kState_follower then
           if killer.group_leader and killer.group_leader.vehicle.valid and killer.vehicle.valid then
@@ -951,7 +987,10 @@ local function send_killer_to_target()
         end
       end
     end
-    local max_groups = math.floor(total_killers/group_size)
+    local max_groups = {}
+    for name,count in pairs(storage.group_count) do
+      max_groups[name] = math.floor(count/group_size)
+    end
 
     -- If there are complete groups, send all of them. This doesn't cost much
     -- runtime as the paths are already computed.
@@ -1013,7 +1052,8 @@ local function send_killer_to_target()
           not have_autopilot( killer.vehicle) and
           (killer.state == kState_idle) then
           -- Candidate for assignment, find the closest of either leaders or target
-          if leading_killers < max_groups then
+          local lk = leading_killers[killer.vehicle.name] or 0
+          if lk < max_groups[killer.vehicle.name] then
             local tgt = killer.cached_closest
             if not tgt then
               tgt = storage.target_tree:nearest(box_from_target(killer.vehicle))
@@ -1037,7 +1077,8 @@ local function send_killer_to_target()
           end
           for _,group in pairs(group_map) do
             -- Leader needs to be present and know where it wants to go and group needs to incomplete
-            if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point then
+            if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point
+               and (group.leader.vehicle.name == killer.vehicle.name) then
               local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
               if ((not closest_d) or (d < closest_d)) then
                 closest_d = d
