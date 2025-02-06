@@ -319,75 +319,96 @@ local kState_follower   = 9
 
 -- Plan a path from target to current position.
 local function plan_path( killer, target, ok_state, fail_state, pf_rad, info, req_info)
-  -- Center of the circle we're walking while waiting for the planner to finish
-  if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 33.0 then
-    killer.taptap_ctr = killer.vehicle.position
-  end
 
   -- Set a reasonable default for the collision mask to avoid walking through water
-  local pathing_collision_mask
   if killer.can_fly then
-    pathing_collision_mask = {
-      layers = { hk_nest_layer = true },
-      consider_tile_transitions = true,
-      not_colliding_with_itself = true
-    }
+    -- Bypass the path planner and compute a straight line
+    local start_point = killer.vehicle.position
+    local d = dist_between_pos( start_point, target)
+    -- Prevent division by (near) zero
+    if d<1.0 then
+      start_point = {x = target.x, y=target.y-1.0}
+      d = 1.0
+    end
+    -- Compute retreat point
+    local dx = (target.x - start_point.x) / d
+    local dy = (target.y - start_point.y) / d
+
+    local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
+    local assemble_point = { x = target.x - dx * 0.99 * assemble_dist, y = target.y - dy * 0.99 * assemble_dist}
+    local retreat_dist = settings.global['hunter-killer-retreat-distance'].value
+    local retreat_point = { x = target.x - dx * 0.99 * retreat_dist, y = target.y - dy * 0.99 * retreat_dist}
+
+    if req_info and req_info.store_path then
+      killer.target_path = { {position=assemble_point},{position=retreat_point},{position=target}}
+    else
+      killer.vehicle.autopilot_destination = nil
+      if ok_state ~= kState_goHome then
+        killer.vehicle.add_autopilot_destination( assemble_point)
+        killer.vehicle.add_autopilot_destination( retreat_point)
+      end
+      killer.vehicle.add_autopilot_destination( target)
+    end
+    killer.target_pos = target
+    for k,v in pairs(info) do
+      killer[k] = v
+    end
+    killer.state = ok_state
   else
-    pathing_collision_mask = {
+    -- Center of the circle we're walking while waiting for the planner to finish
+    if not killer.taptap_ctr or dist_between_pos( killer.vehicle.position, killer.taptap_ctr) > 33.0 then
+      killer.taptap_ctr = killer.vehicle.position
+    end
+    local pathing_collision_mask = {
       layers = { water_tile = true, hk_nest_layer = true },
       consider_tile_transitions = true,
       colliding_with_tiles_only = true,
       not_colliding_with_itself = true
     }
-  end
 
-  local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
+    local pf_bbox = settings.global['hunter-killer-pf-bbox'].value
 
-  local path_resolution_modifier = -3
-  if killer.can_fly then
-    path_resolution_modifier = -5
-  end
-
-  local request = {
-    -- Keep a respectful distance to water and nests
-    bounding_box =  {{-pf_bbox, -pf_bbox}, {pf_bbox, pf_bbox}},
-    collision_mask = pathing_collision_mask,
-    start = killer.vehicle.position,
-    goal = target,
-    force = killer.vehicle.force,
-    -- Don't need to get too close
-    radius = pf_rad,
-    pathfinding_flags = {
-      cache = true,
-      low_priority = false,
-    },
-    path_resolution_modifier = path_resolution_modifier,
-    killer = killer,
-  }
-  if req_info then
-    for k,v in pairs(req_info) do
-      request[k] = v
+    local request = {
+      -- Keep a respectful distance to water and nests
+      bounding_box =  {{-pf_bbox, -pf_bbox}, {pf_bbox, pf_bbox}},
+      collision_mask = pathing_collision_mask,
+      start = killer.vehicle.position,
+      goal = target,
+      force = killer.vehicle.force,
+      -- Don't need to get too close
+      radius = pf_rad,
+      pathfinding_flags = {
+        cache = true,
+        low_priority = false,
+      },
+      path_resolution_modifier = -3,
+      killer = killer,
+    }
+    if req_info then
+      for k,v in pairs(req_info) do
+        request[k] = v
+      end
     end
-  end
 
-  local nauvis = game.surfaces['nauvis']
+    local nauvis = game.surfaces['nauvis']
 
-  storage.pathfinder_requests = storage.pathfinder_requests or {}
-  if killer.request_id then
-    storage.pathfinder_requests[killer.request_id] = nil
-  end
-  local request_id = nauvis.request_path(request)
-  storage.pathfinder_requests[request_id] = request
-  killer.request_id = request_id
-  killer.pathfinder_request = request
-  killer.target_pos = target
+    storage.pathfinder_requests = storage.pathfinder_requests or {}
+    if killer.request_id then
+      storage.pathfinder_requests[killer.request_id] = nil
+    end
+    local request_id = nauvis.request_path(request)
+    storage.pathfinder_requests[request_id] = request
+    killer.request_id = request_id
+    killer.pathfinder_request = request
+    killer.target_pos = target
 
-  for k,v in pairs(info) do
-    killer[k] = v
+    for k,v in pairs(info) do
+      killer[k] = v
+    end
+    killer.ok_state=ok_state
+    killer.fail_state = fail_state
+    killer.state = kState_planning
   end
-  killer.ok_state=ok_state
-  killer.fail_state = fail_state
-  killer.state = kState_planning
 end
 
 -- Event callback if the planner is done
