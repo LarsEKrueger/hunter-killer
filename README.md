@@ -49,16 +49,16 @@ and Killer Spidertrons* settings to the default values.**
 - 0.6.1: Bug fix
 - 0.6.2: Search And Destroy Mode
 - 0.6.3: Bug fix
-  - ☑ Fix Killers leaving Homebase before being completely rearmed
 - 0.6.4: Bug fix
-  - ☑ Crash during map generation
-- 0.6.5: Multi-surface fixes
+- 0.7.0: Flying Hunters
+  - ☑ Support for Attack Aircraft
+- 0.7.1: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.6.6: Group improvements
+- 0.7.2: Group improvements
   - ☐ Different group size for exploration target
-- 0.7: Hunter function
+- 0.8: Hunter function
 
 ## How does the *Killer* operate?
 
@@ -202,6 +202,16 @@ part of the advantage of the group attack.
 You can change the size of the groups at any time. If you experience problems
 with drastic changes, send some killers a few steps aside with a spidertron
 remote. This will disband the group and the leader/follower ratio will stabilize.
+
+## Aircraft
+
+Some mods (e.g. Lex' Aircraft) provide air vehicles based on the spidertron
+prototype. They can be also controlled by this mod. As aircraft are not bound
+to navigate on land, a second set of pathfinding rules were created.
+
+This second set can be activated by naming a vehicle *Predator*. Be aware that
+naming an aircraft *Killer* will just lead to slower routes being planned,
+while naming a land vehicle *Predator* will get it stuck at the coast.
 
 ## Settings
 
