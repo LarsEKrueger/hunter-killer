@@ -89,40 +89,22 @@ end
 --
 -- Vehicle ids will be used as keys. The vehicle state and a link to the
 -- vehicle object will be used as the value in the table.
-local function detect_vehicles()
+
+-- Ensure only valid and eligible vehicles are present
+local function finish_vehicle_update()
   -- Get the vehicle list or start from scratch
   local old_vehicles = storage.vehicles or {}
   local new_vehicles = {}
 
   -- Go through all managed vehicles and remove those that are no longer eligible.
+  local group_count = {}
   for id,state in pairs(old_vehicles) do
     -- If veh doesn't exist anymore or is no longer named correctly, don't copy it to the new table.
     local eligible = is_eligible_vehicle(state.vehicle)
     if eligible ~= kEligible_no then
       state.can_fly = (eligible == kEligible_fly)
       new_vehicles[id] = state
-    end
-  end
-
-  -- Go through all vehicles in the game and add the eligible ones to the list
-  -- of managed vehicles.
-  local surf_vehicles = game.surfaces['nauvis'].find_entities_filtered{
-        type='spider-vehicle',
-        force='player'
-      }
-
-  local group_count = {}
-  for _,veh in ipairs(surf_vehicles) do
-    group_count[veh.name] = 1 + (group_count[veh.name] or 0)
-    if not new_vehicles[veh.unit_number] then
-      local eligible = is_eligible_vehicle(veh)
-      if eligible ~= kEligible_no then
-        new_vehicles[veh.unit_number]={
-          vehicle=veh,
-          state=kState_idle,
-          last_state=kState_idle,
-          can_fly = (eligible == kEligible_fly)}
-      end
+      group_count[state.vehicle.name] = 1 + (group_count[state.vehicle.name] or 0)
     end
   end
 
@@ -131,6 +113,55 @@ local function detect_vehicles()
   storage.group_count = group_count
 
   count_killers( new_vehicles, ' managed')
+end
+
+-- Scan through all vehicles. This function can be slow due to the API call.
+local function detect_vehicles( )
+  -- Go through all vehicles in the game and add the eligible ones to the list
+  -- of managed vehicles.
+  local surf_vehicles = game.surfaces['nauvis'].find_entities_filtered{
+        type='spider-vehicle',
+        force='player'
+      }
+
+  storage.vehicles = storage.vehicles or {}
+
+  for _,veh in ipairs(surf_vehicles) do
+    if not storage.vehicles[veh.unit_number] then
+      local eligible = is_eligible_vehicle(veh)
+      if eligible ~= kEligible_no then
+        storage.vehicles[veh.unit_number]={
+          vehicle=veh,
+          state=kState_idle,
+          last_state=kState_idle,
+          can_fly = (eligible == kEligible_fly)
+        }
+      else
+        storage.vehicles[entity.unit_number] = nil
+      end
+    end
+  end
+  finish_vehicle_update()
+end
+
+local function update_vehicle( entity)
+  if entity
+      and entity.type and entity.type == 'spider-vehicle'
+      and entity.force and entity.force.name == 'player'
+      and entity.surface and entity.surface.name == 'nauvis' then
+    local eligible = is_eligible_vehicle(entity)
+    if eligible ~= kEligible_no then
+      storage.vehicles[entity.unit_number] = {
+        vehicle=entity,
+        state=kState_idle,
+        last_state=kState_idle,
+        can_fly = (eligible == kEligible_fly)
+      }
+    else
+      storage.vehicles[entity.unit_number] = nil
+    end
+    finish_vehicle_update()
+  end
 end
 
 -- Detect all homebase objects
@@ -1178,7 +1209,8 @@ local function spidertron_state_machine()
       end
       killer.last_state = current_state
     else
-      rescan_vehicles = true
+      update_vehicle( killer)
+      -- rescan_vehicles = true
     end
   end
 
@@ -1258,11 +1290,29 @@ local function sanity_check()
   end
 end
 
+local function on_entity_renamed( event)
+  update_vehicle( event.entity)
+end
+
+local function on_entity_cloned( event)
+  update_vehicle( event.source)
+  update_vehicle( event.destination)
+end
+
+local function on_entity_died( event)
+  update_vehicle( event.entity)
+end
+
+local function on_entity_settings_pasted( event)
+  update_vehicle( event.source)
+  update_vehicle( event.destination)
+end
+
 -- Register events: vehicle list may have changed
-script.on_event(defines.events.on_entity_renamed, detect_vehicles)
-script.on_event(defines.events.on_entity_cloned, detect_vehicles)
-script.on_event(defines.events.on_entity_died, detect_vehicles, {{filter='vehicle'}})
-script.on_event(defines.events.on_entity_settings_pasted, detect_vehicles)
+script.on_event(defines.events.on_entity_renamed, on_entity_renamed)
+script.on_event(defines.events.on_entity_cloned, on_entity_cloned)
+script.on_event(defines.events.on_entity_died, on_entity_died, {{filter='vehicle'}})
+script.on_event(defines.events.on_entity_settings_pasted, on_entity_settings_pasted)
 
 -- Register events: homebase may have changed
 script.on_event(defines.events.on_chart_tag_added, detect_homebases)
