@@ -51,14 +51,15 @@ and Killer Spidertrons* settings to the default values.**
 - 0.6.3: Bug fix
 - 0.6.4: Bug fix
 - 0.7.0: Flying Hunters
-  - ☑ Support for Attack Aircraft
-- 0.7.1: Multi-surface fixes
+- 0.7.1: Copy-paste fixes
+  - ☑ Faster updates of vehicle list
+- 0.8.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.7.2: Group improvements
+- 0.8.1: Group improvements
   - ☐ Different group size for exploration target
-- 0.8: Hunter function
+- 0.9: Hunter function
 
 ## How does the *Killer* operate?
 
