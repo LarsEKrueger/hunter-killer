@@ -137,7 +137,7 @@ local function detect_vehicles( )
           can_fly = (eligible == kEligible_fly)
         }
       else
-        storage.vehicles[entity.unit_number] = nil
+        storage.vehicles[veh.unit_number] = nil
       end
     end
   end

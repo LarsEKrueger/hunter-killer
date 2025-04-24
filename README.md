@@ -52,7 +52,8 @@ and Killer Spidertrons* settings to the default values.**
 - 0.6.4: Bug fix
 - 0.7.0: Flying Hunters
 - 0.7.1: Copy-paste fixes
-  - ☑ Faster updates of vehicle list
+- 0.7.2: Bug fix
+  - ☑ Don't crash on loading
 - 0.8.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
