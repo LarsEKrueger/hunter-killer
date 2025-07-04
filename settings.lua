@@ -168,5 +168,15 @@ data:extend({
     type = "bool-setting",
     setting_type = "runtime-global",
     default_value = false,
+  },
+  {
+    name = "hunter-killer-bingo-fuel",
+    localised_name = "Bingo Fuel",
+    localised_description = "Percentage of fuel loadout that triggers a return to base",
+    type = "int-setting",
+    setting_type = "runtime-global",
+    default_value = 50,
+    minimum_value = 1,
+    maximum_value = 99,
   }
 })

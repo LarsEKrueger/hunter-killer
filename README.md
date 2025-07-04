@@ -54,13 +54,16 @@ and Killer Spidertrons* settings to the default values.**
 - 0.7.1: Copy-paste fixes
 - 0.7.2: Bug fix
   - ☑ Don't crash on loading
-- 0.8.0: Multi-surface fixes
+- 0.8.0: Jet support
+    - ☑ Return to base if fuel is low
+    - ☐ Don't retreat if no shot was fired during attack
+- 0.9.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.8.1: Group improvements
+- 0.9.1: Group improvements
   - ☐ Different group size for exploration target
-- 0.9: Hunter function
+- 0.10: Hunter function
 
 ## How does the *Killer* operate?
 
@@ -460,6 +463,22 @@ slow down the game over time as it reveals the whole (reachable) map.
 * Earliest visible effect: Next Scan Cycle
 * Default: Off
 * Internal name: `hunter-killer-search-and-destroy-mode`
+
+### Bingo Fuel
+
+Percentage of fuel value in storage (relative to requested amount) when the
+spider returns to base to refuel. The check takes into account the differences
+between fuels, e.g. if you fuel with wood (2 MJ) and rocket fuel (100 MJ) and
+requested 1 stack each (100 wood = 200 MJ, 10 rocket fuel = 1000 MJ), the total
+fuel value is 1200 MJ.
+
+If you set 50% bingo fuel (the default), the spiders (or more likely jets) will
+return to base when less than 600 MJ is left. This could be from burning 6
+rocket fuel items or all wood and 4 rocket fuel.
+
+* Earliest visible effect: Next Scan Cycle
+* Default: 50%
+* Internal name: `hunter-killer-bingo-fuel`
 
 ## Limitations and Recommended Mods
 

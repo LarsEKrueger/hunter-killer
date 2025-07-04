@@ -493,8 +493,14 @@ local function get_min_health()
   return min_health
 end
 
+-- Get the bingo fuel theshold as a ratio
+local function get_bingo_fuel()
+  local min_fuel = settings.global['hunter-killer-bingo-fuel'].value / 100.0
+  return min_fuel
+end
+
 -- Check if the spidertron needs to go home
-local function vehicle_wants_home(vehicle, min_health)
+local function vehicle_wants_home(vehicle, min_health, bingo_fuel)
   -- is vehicle damaged?
   if vehicle.get_health_ratio() < min_health then
     return true
@@ -504,31 +510,47 @@ local function vehicle_wants_home(vehicle, min_health)
   local trunk_inv = vehicle.get_inventory(defines.inventory.spider_trunk)
   local fuel_inv = vehicle.get_inventory(defines.inventory.fuel)
   -- Go through the logistics slots and check that enough items are in ammo + trunk + fuel.
+  local fuel_max = 0
+  local fuel_val = 0
   for logPointInd, logPoint in pairs( vehicle.get_logistic_point()) do
     for logSectInd, logSect in pairs( logPoint.sections) do
       for logFilterInd, logFilter in pairs( logSect.filters) do
         local log_req = logFilter.value
-        if not log_req.name then
-          break
-        end
-        local ammo_count = 0
-        local trunk_count = 0
-        local fuel_count = 0
-        if ammo_inv then
-          ammo_count = ammo_inv.get_item_count(log_req.name)
-        end
-        if trunk_inv then
-          trunk_count = trunk_inv.get_item_count(log_req.name)
-        end
-        if fuel_inv then
-          fuel_count = fuel_inv.get_item_count(log_req.name)
-        end
-        if ((ammo_count + trunk_count + fuel_count) == 0) then
-          return true
+        if log_req and log_req.name then
+          local proto = prototypes.item[log_req.name]
+          if proto.fuel_category then
+            fuel_max = fuel_max + proto.fuel_value * (logFilter.min or 0)
+          end
+          local ammo_count = 0
+          local trunk_count = 0
+          local fuel_count = 0
+          if ammo_inv then
+            ammo_count = ammo_inv.get_item_count(log_req.name)
+          end
+          if trunk_inv then
+            trunk_count = trunk_inv.get_item_count(log_req.name)
+            if proto.fuel_category then
+              fuel_val = fuel_val + trunk_count * proto.fuel_value
+            end
+          end
+          if fuel_inv then
+            fuel_count = fuel_inv.get_item_count(log_req.name)
+            if proto.fuel_category then
+              fuel_val = fuel_val + fuel_count * proto.fuel_value
+            end
+          end
+          if ((ammo_count + trunk_count + fuel_count) == 0) then
+            return true
+          end
         end
       end
     end
   end
+
+  if (fuel_max > 0) and (fuel_val < bingo_fuel * fuel_max) then
+    return true
+  end
+
   return false
 end
 
@@ -545,23 +567,22 @@ local function vehicle_is_rearmed(vehicle)
     for logSectInd, logSect in pairs( logPoint.sections) do
       for logFilterInd, logFilter in pairs( logSect.filters) do
         local log_req = logFilter.value
-        if not log_req.name then
-          break
-        end
-        local ammo_count = 0
-        local trunk_count = 0
-        local fuel_count = 0
-        if ammo_inv then
-          ammo_count = ammo_inv.get_item_count(log_req.name)
-        end
-        if trunk_inv then
-          trunk_count = trunk_inv.get_item_count(log_req.name)
-        end
-        if fuel_inv then
-          fuel_count = fuel_inv.get_item_count(log_req.name)
-        end
-        if (ammo_count + trunk_count + fuel_count) < logFilter.min then
-          return false
+        if log_req and log_req.name then
+          local ammo_count = 0
+          local trunk_count = 0
+          local fuel_count = 0
+          if ammo_inv then
+            ammo_count = ammo_inv.get_item_count(log_req.name)
+          end
+          if trunk_inv then
+            trunk_count = trunk_inv.get_item_count(log_req.name)
+          end
+          if fuel_inv then
+            fuel_count = fuel_inv.get_item_count(log_req.name)
+          end
+          if (ammo_count + trunk_count + fuel_count) < logFilter.min then
+            return false
+          end
         end
       end
     end
@@ -610,7 +631,7 @@ end
 local function trans_killer_idle( killer)
   -- White
   killer.vehicle.color = {1.0, 1.0, 1.0, 1.0}
-  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+  if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     vehicle_go_home(killer)
   end
   if have_autopilot(killer.vehicle) then
@@ -648,7 +669,7 @@ local function trans_killer_approach( killer)
   if not have_autopilot(killer.vehicle) then
     idle=true
   end
-  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+  if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     vehicle_go_home(killer)
     attack = false
     idle = false
@@ -729,7 +750,7 @@ local function trans_killer_re_arm( killer)
   killer.vehicle.color = {0.0, 1.0, 0.0, 1.0}
   local pf_rad = settings.global['hunter-killer-pf-radius'].value
   if not killer.home_position or dist_between_pos(killer.home_position, killer.vehicle.position) > pf_rad then
-    if vehicle_wants_home(killer.vehicle, get_min_health()) then
+    if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
       vehicle_go_home(killer)
       return
     end
@@ -818,7 +839,7 @@ end
 local function trans_killer_walking( killer)
   -- Grey
   killer.vehicle.color = {0.5, 0.5, 0.5, 1.0}
-  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+  if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     vehicle_go_home(killer)
     return
   end
@@ -849,7 +870,7 @@ local function trans_killer_leader( killer)
   -- Dark red
   killer.vehicle.color = {0.6, 0.1, 0.1, 1.0}
   local go_home = false
-  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+  if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     go_home = true
   end
   local pf_rad = settings.global['hunter-killer-pf-radius'].value
@@ -891,7 +912,7 @@ local function trans_killer_follower( killer)
   -- Dark green
   killer.vehicle.color = {0.1, 0.6, 0.1, 1.0}
   local go_home = false
-  if vehicle_wants_home(killer.vehicle, get_min_health()) then
+  if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     go_home = true
   end
   local pf_rad = settings.global['hunter-killer-pf-radius'].value
@@ -948,6 +969,7 @@ local function send_killer_to_target()
   if not force.is_pathfinder_busy() then
     local killers = storage.vehicles or {}
     local min_health = get_min_health()
+    local bingo_fuel = get_bingo_fuel()
     local group_size = settings.global['hunter-killer-attack-group-size'].value
     local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
     -- Count the idle killers and the leaders.
@@ -961,7 +983,7 @@ local function send_killer_to_target()
       total_killers = total_killers + 1
       if killer.vehicle and
         killer.vehicle.valid and
-        not vehicle_wants_home(killer.vehicle, min_health) then
+        not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) then
         if (killer.state == kState_idle) and (not have_autopilot( killer.vehicle))  then
           idle_killers = idle_killers + 1
         elseif (killer.state == kState_leader) then
@@ -1079,7 +1101,7 @@ local function send_killer_to_target()
       for _,killer in pairs(killers) do
         if killer.vehicle and
           killer.vehicle.valid and
-          not vehicle_wants_home(killer.vehicle, min_health) and
+          not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) and
           not have_autopilot( killer.vehicle) and
           (killer.state == kState_idle) then
           -- Candidate for assignment, find the closest of either leaders or target
