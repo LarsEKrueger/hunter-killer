@@ -53,10 +53,9 @@ and Killer Spidertrons* settings to the default values.**
 - 0.7.0: Flying Hunters
 - 0.7.1: Copy-paste fixes
 - 0.7.2: Bug fix
-  - ☑ Don't crash on loading
 - 0.8.0: Jet support
     - ☑ Return to base if fuel is low
-    - ☐ Don't retreat if no shot was fired during attack
+    - ☑ Don't retreat if spider wasn't hurt
 - 0.9.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface

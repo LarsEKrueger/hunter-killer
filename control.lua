@@ -678,6 +678,7 @@ local function trans_killer_approach( killer)
   if attack then
     killer.safe_path = killer.vehicle.autopilot_destinations
     killer.state = kState_attack
+    killer.pre_attack_health = killer.vehicle.get_health_ratio()
     killer.taptap_ctr = nil
     disable_roboports(killer.vehicle)
   elseif idle then
@@ -700,6 +701,13 @@ local function trans_killer_attack( killer)
   else
     retreat = true
   end
+
+  -- If killer's health didn't change, don't retreat.
+  if retreat and killer.pre_attack_health and killer.pre_attack_health == killer.vehicle.get_health_ratio() then
+    killer.state = kState_idle
+    return
+  end
+
   if retreat then
     local n = #killer.safe_path
     for i = 1, n do
@@ -1071,6 +1079,8 @@ local function send_killer_to_target()
               for _,follower in ipairs(group.followers) do
                 follower.target_pos = target.position
                 follower.target = target
+                -- Store a recent health value because vehicles sometimes go into attack directly.
+                follower.pre_attack_health = follower.vehicle.get_health_ratio()
                 follower.state = kState_approach
                 follower.ok_state = nil
                 follower.fail_state = nil
