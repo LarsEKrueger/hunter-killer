@@ -54,8 +54,10 @@ and Killer Spidertrons* settings to the default values.**
 - 0.7.1: Copy-paste fixes
 - 0.7.2: Bug fix
 - 0.8.0: Jet support
-    - ☑ Return to base if fuel is low
-    - ☑ Don't retreat if spider wasn't hurt
+- 0.8.1: Improved handling of large groups
+    - ☑ Don't retreat on exploration targets
+    - ☑ Add grace period for assignment, keep the groups together
+    - ☑ Demote a leader if it's waiting for followers for too long
 - 0.9.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
@@ -77,7 +79,7 @@ The spawners, worms, and places to explore will be called *targets* in the follo
 
 | State     | Action                                        | Color |
 |-----------|-----------------------------------------------|-------|
-| idle      | Wait for a spawner / work to become a target. | White |
+| idle      | Wait for a spawner / worm to become a target. | White |
 | planning  | Waiting for the path planner to finish        | Yellow |
 | walking   | Going to where the autopilot leads it.        | Grey |
 | approach  | Walk up to the target.                        | Orange |

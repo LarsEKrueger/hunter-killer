@@ -178,5 +178,25 @@ data:extend({
     default_value = 50,
     minimum_value = 1,
     maximum_value = 99,
+  },
+  {
+    name = "hunter-killer-assign-grace",
+    localised_name = "Assignment delay",
+    localised_description = "Number of state checks (see Startup Settings) to wait before picking a target",
+    type = "int-setting",
+    setting_type = "runtime-global",
+    default_value = 5,
+    minimum_value = 0,
+    maximum_value = 100,
+  },
+  {
+    name = "hunter-killer-leader-grace",
+    localised_name = "Leader Demotion Period",
+    localised_description = "Number of state checks (see Startup Settings) for a waiting leader to give up",
+    type = "int-setting",
+    setting_type = "runtime-global",
+    default_value = 60,
+    minimum_value = 10,
+    maximum_value = 10000,
   }
 })

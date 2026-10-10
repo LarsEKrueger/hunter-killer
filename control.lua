@@ -720,11 +720,7 @@ local function trans_killer_attack( killer)
       killer.target.valid = nil
       killer.target.health = nil
     end
-    local n = #killer.safe_path
-    for i = 1, n do
-      killer.vehicle.add_autopilot_destination( killer.safe_path[n+1-i])
-    end
-    killer.state = kState_retreat
+    killer.state = kState_idle
   end
 end
 
@@ -798,7 +794,7 @@ local function trans_killer_planning( killer)
         local y=killer.taptap_ctr.y + math.cos(angle)*taptap_radius
 
         local tile = nauvis.get_tile(x,y)
-        if tile and tile.valid and (tile.name ~= 'water') and (tile.name ~= 'deepwater') then
+        if killer.can_fly or (tile and tile.valid and (tile.name ~= 'water') and (tile.name ~= 'deepwater')) then
           killer.vehicle.add_autopilot_destination( { x=x, y=y})
         end
       end
@@ -902,6 +898,16 @@ local function trans_killer_leader( killer)
     killer.state = kState_idle
   end
 
+  -- If the group leader has been waiting for a while, reassign the followers
+  if have_autopilot(killer.vehicle) then
+    killer.inStateCnt = 0
+  end
+  local inStateCnt = (killer.inStateCnt or 0)
+  local leader_grace = settings.global['hunter-killer-leader-grace'].value
+  if (inStateCnt > leader_grace) then
+    killer.state = kState_idle
+  end
+
   if go_home or (killer.state == kState_idle) then
     killer.target_path = nil
     killer.target = nil
@@ -980,6 +986,7 @@ local function send_killer_to_target()
     local bingo_fuel = get_bingo_fuel()
     local group_size = settings.global['hunter-killer-attack-group-size'].value
     local assemble_dist = settings.global['hunter-killer-assemble-distance'].value
+    local assign_grace = settings.global['hunter-killer-assign-grace'].value
     -- Count the idle killers and the leaders.
     local idle_killers = 0
     local leading_killers = {}
@@ -992,7 +999,8 @@ local function send_killer_to_target()
       if killer.vehicle and
         killer.vehicle.valid and
         not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) then
-        if (killer.state == kState_idle) and (not have_autopilot( killer.vehicle))  then
+        local inStateCnt = (killer.inStateCnt or 0)
+        if (killer.state == kState_idle) and (inStateCnt>assign_grace) and (not have_autopilot( killer.vehicle))  then
           idle_killers = idle_killers + 1
         elseif (killer.state == kState_leader) then
           if killer.target and killer.target.valid then
@@ -1166,6 +1174,7 @@ local function send_killer_to_target()
           closest_k.dont_tap = nil
           local store_path = true
           local next_state = kState_leader
+          closest_k.pre_attack_health = closest_k.vehicle.get_health_ratio()
           if group_size == 1 then
             store_path = false
             next_state = kState_approach
@@ -1229,6 +1238,7 @@ local function spidertron_state_machine()
   for id,killer in pairs(killers) do
     if killer.vehicle and killer.vehicle.valid then
       local current_state = killer.state
+      local inStateCnt = (killer.inStateCnt or 0)
       -- Dispatch by killer to the respective transition checks
       local trans_killer = state_dispatch[killer.state]
       if trans_killer then
@@ -1240,6 +1250,12 @@ local function spidertron_state_machine()
         killer.state = kState_idle
       end
       killer.last_state = current_state
+      if killer.last_state ~= killer.state then
+        inStateCnt = 0
+      else
+        inStateCnt = inStateCnt + 1
+      end
+      killer.inStateCnt = inStateCnt
     else
       update_vehicle( killer)
       -- rescan_vehicles = true
@@ -1292,10 +1308,10 @@ local function spidertron_find_targets(event)
       local bdr = 3600.0 * bd / dt
       if not storage.hunter_killer_bdr_avg then
         storage.hunter_killer_bdr_avg = bdr
-        game.print( cnt .. ' places to visit. ' .. bdr .. ' checks per minute')
+        game.print( string.format( '%d places to visit. %.1f checks per minute', cnt, bdr))
       else
         storage.hunter_killer_bdr_avg = 0.99 * storage.hunter_killer_bdr_avg + 0.01 * bdr
-        game.print( cnt .. ' places to visit. ' .. storage.hunter_killer_bdr_avg .. ' checks per minute on average')
+        game.print( string.format( '%d places to visit. %.1f  checks per minute on average', cnt, storage.hunter_killer_bdr_avg))
       end
       storage.hunter_killer_last_cnt = cnt
       storage.hunter_killer_last_cnt_tick = event.tick
