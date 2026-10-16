@@ -634,9 +634,6 @@ local function trans_killer_idle( killer)
   if vehicle_wants_home(killer.vehicle, get_min_health(), get_bingo_fuel()) then
     vehicle_go_home(killer)
   end
-  if have_autopilot(killer.vehicle) then
-    killer.cached_closest = nil
-  end
 end
 
 -- State transition checker for killer spidertrons in approach state
@@ -1112,6 +1109,7 @@ local function send_killer_to_target()
     -- We have only incomplete groups. Go through all idle killers and try to make one leader or follower.
     if (idle_killers > 0) then
       local pf_rad = settings.global['hunter-killer-pf-radius'].value
+      -- Try to make one leader
       local closest_d = nil
       local closest_t = nil
       local closest_is_target = false
@@ -1125,11 +1123,7 @@ local function send_killer_to_target()
           -- Candidate for assignment, find the closest of either leaders or target
           local lk = leading_killers[killer.vehicle.name] or 0
           if lk < max_groups[killer.vehicle.name] then
-            local tgt = killer.cached_closest
-            if not tgt then
-              tgt = storage.target_tree:nearest(box_from_target(killer.vehicle))
-              killer.cached_closest = tgt
-            end
+            tgt = storage.target_tree:nearest(box_from_target(killer.vehicle))
             if tgt and not tgt.box.target.valid then
               storage.target_tree:delete(tgt.id)
               tgt = nil
@@ -1142,20 +1136,29 @@ local function send_killer_to_target()
                 closest_k = killer
                 closest_is_target = true
               end
-            else
-              killer.cached_closest = nil
             end
           end
-          for _,group in pairs(group_map) do
-            -- Leader needs to be present and know where it wants to go and group needs to incomplete
-            if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point
-               and (group.leader.vehicle.name == killer.vehicle.name) then
-              local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
-              if ((not closest_d) or (d < closest_d)) then
-                closest_d = d
-                closest_t = group.leader
-                closest_k = killer
-                closest_is_target = false
+        end
+      end
+      if not closest_t then
+        -- We couldn't find a new leader, lets search for followers
+        for _,killer in pairs(killers) do
+          if killer.vehicle and
+            killer.vehicle.valid and
+            not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) and
+            not have_autopilot( killer.vehicle) and
+            (killer.state == kState_idle) then
+            for _,group in pairs(group_map) do
+              -- Leader needs to be present and know where it wants to go and group needs to incomplete
+              if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point
+                and (group.leader.vehicle.name == killer.vehicle.name) then
+                local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
+                if ((not closest_d) or (d < closest_d)) then
+                  closest_d = d
+                  closest_t = group.leader
+                  closest_k = killer
+                  closest_is_target = false
+                end
               end
             end
           end
@@ -1167,7 +1170,6 @@ local function send_killer_to_target()
         closest_k.group_leader = nil
         closest_k.ok_state = nil
         closest_k.fail_state = nil
-        closest_k.cached_closest = nil
         if closest_is_target then
           -- Delete target and surrounding targets, make closest_k a leader
           closest_k.target_path = nil
