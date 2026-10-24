@@ -1,9 +1,9 @@
 {
   "name": "hunter-killer",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "title": "Hunter and Killer Spidertrons",
   "author": "lars_e_krueger@gmx.de",
-  "factorio_version": "2.0",
+  "factorio_version": "2.1",
   "dependencies": ["base >= 2.0"],
   "description": "Turn spidertrons into automatic biter killing machines"
 }

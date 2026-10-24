@@ -518,7 +518,7 @@ local function vehicle_wants_home(vehicle, min_health, bingo_fuel)
         local log_req = logFilter.value
         if log_req and log_req.name then
           local proto = prototypes.item[log_req.name]
-          if proto.fuel_category then
+          if proto.fuel_categories then
             fuel_max = fuel_max + proto.fuel_value * (logFilter.min or 0)
           end
           local ammo_count = 0
@@ -529,13 +529,13 @@ local function vehicle_wants_home(vehicle, min_health, bingo_fuel)
           end
           if trunk_inv then
             trunk_count = trunk_inv.get_item_count(log_req.name)
-            if proto.fuel_category then
+            if proto.fuel_categories then
               fuel_val = fuel_val + trunk_count * proto.fuel_value
             end
           end
           if fuel_inv then
             fuel_count = fuel_inv.get_item_count(log_req.name)
-            if proto.fuel_category then
+            if proto.fuel_categories then
               fuel_val = fuel_val + fuel_count * proto.fuel_value
             end
           end
@@ -1140,25 +1140,25 @@ local function send_killer_to_target()
           end
         end
       end
-      if not closest_t then
-        -- We couldn't find a new leader, lets search for followers
-        for _,killer in pairs(killers) do
-          if killer.vehicle and
-            killer.vehicle.valid and
-            not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) and
-            not have_autopilot( killer.vehicle) and
-            (killer.state == kState_idle) then
-            for _,group in pairs(group_map) do
-              -- Leader needs to be present and know where it wants to go and group needs to incomplete
-              if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point
-                and (group.leader.vehicle.name == killer.vehicle.name) then
-                local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
-                if ((not closest_d) or (d < closest_d)) then
-                  closest_d = d
-                  closest_t = group.leader
-                  closest_k = killer
-                  closest_is_target = false
-                end
+      -- We couldn't find a new leader, lets search for followers. If we would
+      -- stop here, leaders would stay close to each other, drawing followers
+      -- from all over the map.
+      for _,killer in pairs(killers) do
+        if killer.vehicle and
+          killer.vehicle.valid and
+          not vehicle_wants_home(killer.vehicle, min_health, bingo_fuel) and
+          not have_autopilot( killer.vehicle) and
+          (killer.state == kState_idle) then
+          for _,group in pairs(group_map) do
+            -- Leader needs to be present and know where it wants to go and group needs to incomplete
+            if group.leader and ((#group.followers + 1) < group_size) and group.leader.assembly_point
+              and (group.leader.vehicle.name == killer.vehicle.name) then
+              local d = dist_between_pos( group.leader.assembly_point, killer.vehicle.position)
+              if ((not closest_d) or (d < closest_d)) then
+                closest_d = d
+                closest_t = group.leader
+                closest_k = killer
+                closest_is_target = false
               end
             end
           end

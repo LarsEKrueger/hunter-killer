@@ -54,17 +54,18 @@ and Killer Spidertrons* settings to the default values.**
 - 0.7.1: Copy-paste fixes
 - 0.7.2: Bug fix
 - 0.8.0: Jet support
-- 0.8.1: Improved handling of large groups
+- 0.9.0: Improved handling of large groups
     - ☑ Don't retreat on exploration targets
     - ☑ Add grace period for assignment, keep the groups together
     - ☑ Demote a leader if it's waiting for followers for too long
-- 0.9.0: Multi-surface fixes
+    - ☑ Update to game version 2.1
+- 0.10.0: Multi-surface fixes
   - ☐ Check surfaces with killers on them
   - ☐ Send killers to targets on their surface
   - ☐ Test with finite maps. Special mode to find all targets if map is finite.
-- 0.9.1: Group improvements
+- 0.10.1: Group improvements
   - ☐ Different group size for exploration target
-- 0.10: Hunter function
+- 0.11: Hunter function
 
 ## How does the *Killer* operate?
 
